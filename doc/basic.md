@@ -295,6 +295,14 @@ The default format for %v is:
 
 
 
+# array
+数组语法 是：[cap]type
+* 初始化要指定长度（或者叫做容量） 
+* 直接初始化 
+* arr[i]的形式访问元素 
+* len和cap操作用于获取数组长度
+
+
 
 
 
