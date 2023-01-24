@@ -80,6 +80,31 @@ type byte = uint8
 
 # 变量
 
+var，语法：var name type = value 
+* 局部变量 
+* 包变量 
+* 块声明 
+* 驼峰命名 
+* 首字符是否大写控制了访问性：大写包外可 访问； 
+* golang 支持类型推断
+
+变量声明 := 
+* 只能用于局部变量，即方法内部 
+* golang 使用类型推断来推断类型。数字会被理 解为int或者float64。（所以要其它类型的数字，就得用 var 来声明）
+
+变量声明易错点
+* 变量声明了没有使用 
+* 类型不匹配 
+* 同作用域下，变量只能声明一次
+
+常量声明 const
+
+首字符是否大写控制了访问性：大写包 外可访问； 
+* 驼峰命名 
+* 支持类型推断 
+* 无法修改值
+
+
 ```go
 
 package main
@@ -117,6 +142,45 @@ func main() {
 }
 
 
+
+```
+
+# func
+
+```go
+
+//一个返回值
+func f0(name string) string {
+	return "welcome " + name
+}
+
+// 多个参数，多个返回值
+func f1(a string, name string) (int, string) {
+	return 0, name
+}
+
+// 返回值命名
+func f2(a int, b string) (age int, name string) {
+	age = a + 1
+	name = "Welcome " + b
+	return
+}
+
+// 多个参数类型相同，可以写在一起
+func f3(a, b string, a1, a2 int, c string) (d, e int, f string) {
+	d = a1
+	e = a2
+	f = a + b
+	return
+}
+
+// 不定参数
+func f4(a string, b string, names ...string) {
+	for _, name := range names {
+		fmt.Printf("name = %s \n", name)
+	}
+
+}
 
 ```
 
