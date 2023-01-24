@@ -12,6 +12,9 @@ var (
 	second int32 = 16
 )
 
+const internal = "包内可访问"
+const External = "包外可访问"
+
 func main() {
 	// int 是灰色的，是因为 golang 自己可以做类型推断，它觉得你可以省略
 	var a int = 13
