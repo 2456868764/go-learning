@@ -439,8 +439,66 @@ After newSlice = [10 30 30 40 50], Pointer = 0x1400011a240, len = 5, cap = 8
 * 子切片作为只读，不修改不append
 * s = append(s, data)
 
-### Refererces
+### References
 * https://halfrost.com/go_slice/
+
+# for
+
+for有三种形式： 
+# for {} ，类似while的无限循环
+# fori，一般的按照下标循环 
+# for range最为特殊的range遍历 
+# break 和 continue和别的语言一样
+
+```go
+
+func forLoop() {
+	arr := []int{1, 2, 3, 4, 5, 6, 7, 8}
+	index := 0
+	fmt.Println(" for loop start \n ")
+	for {
+		if index == 4 {
+			// break跳出for循环
+			break
+		}
+		fmt.Printf("%d = %d\n", index, arr[index])
+		index++
+	}
+
+	fmt.Println(" for loop end \n ")
+}
+
+func forI() {
+	arr := []int{1, 2, 3, 4, 5, 6, 7, 8}
+	fmt.Println("for i loop start \n ")
+	for i := 0; i < len(arr); i++ {
+		fmt.Printf("%d = %d \n", i, arr[i])
+	}
+	fmt.Println("for i loop end \n ")
+}
+
+func forRange() {
+	arr := []int{1, 2, 3, 4, 5, 6, 7, 8}
+	fmt.Println("for range loop start \n ")
+
+	for index, value := range arr {
+		fmt.Printf("%d = %d\n", index, value)
+	}
+
+	// 只需要value, 可以用 _ 代替index
+	for _, value := range arr {
+		fmt.Printf("value: %d \n", value)
+	}
+
+	// 只需要index也可以去掉写成for index := range arr
+	for index := range arr {
+		fmt.Printf("index: %d \n", index)
+	}
+
+	fmt.Println("for range loop end \n ")
+}
+
+```
 
 
 
