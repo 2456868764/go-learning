@@ -434,6 +434,75 @@ After newSlice = [10 30 30 40 50], Pointer = 0x1400011a240, len = 5, cap = 8
 
 ```
 
+### slice append , add, remove
+
+slice只支持append操作
+```go
+
+// The append built-in function appends elements to the end of a slice. If
+// it has sufficient capacity, the destination is resliced to accommodate the
+// new elements. If it does not, a new underlying array will be allocated.
+// Append returns the updated slice. It is therefore necessary to store the
+// result of append, often in the variable holding the slice itself:
+//
+//	slice = append(slice, elem1, elem2)
+//	slice = append(slice, anotherSlice...)
+//
+// As a special case, it is legal to append a string to a byte slice, like this:
+//
+//	slice = append([]byte("hello "), "world"...)
+
+func append(slice []Type, elems ...Type) []Type
+
+```
+
+...的用法
+目前总结出的...用法有两种： 
+* 放在参数后面，代表不定数量的参数 
+* 放在slice后面，代表将slice打散进行传递
+
+slice Add &Remove
+
+```go
+
+func Add(arr []int, index int, value int) ([]int, error) {
+	if index > len(arr) || index < 0 {
+		return arr, errors.New("index exceed slice length")
+	}
+
+	if index == 0 {
+		arr = append([]int{value}, arr[:]...)
+		return arr, nil
+	}
+	if index == len(arr)-1 {
+		return append(arr, value), nil
+	}
+
+	temp := append(arr[:index], value)
+	arr = append(temp, arr[index:]...)
+	return arr, nil
+
+	//s = append(s, zero_value)
+	//copy(s[i+1:], s[i:])
+	//s[i] = x
+}
+
+func Remove(arr []int, index int) ([]int, error) {
+	if index >= len(arr) || index < 0 {
+		return nil, errors.New("index exceed slice length")
+	}
+
+	if index == len(arr)-1 {
+		return arr[:index-1], nil
+	}
+	if index == 0 {
+		return arr[1:], nil
+	}
+	return append(arr[:index], arr[index+1:]...), nil
+}
+
+```
+
 ### 切片建议操作
 * a1 := make([]type, 0, capacity)
 * 子切片作为只读，不修改不append
