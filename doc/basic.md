@@ -445,10 +445,10 @@ After newSlice = [10 30 30 40 50], Pointer = 0x1400011a240, len = 5, cap = 8
 # for
 
 for有三种形式： 
-# for {} ，类似while的无限循环
-# fori，一般的按照下标循环 
-# for range最为特殊的range遍历 
-# break 和 continue和别的语言一样
+* for {} ，类似while的无限循环
+* fori，一般的按照下标循环 
+* for range最为特殊的range遍历 
+* break 和 continue和别的语言一样
 
 ```go
 
