@@ -296,11 +296,152 @@ The default format for %v is:
 
 
 # array
-数组语法 是：[cap]type
+数组语法：[cap]type
 * 初始化要指定长度（或者叫做容量） 
 * 直接初始化 
 * arr[i]的形式访问元素 
 * len和cap操作用于获取数组长度
+
+# slice
+### 基本使用
+数组语法：[]`type`
+* 直接初始化 a1 := []type{...}
+* make初始化:make([]type, length, capacity) 
+* slice[i] 的形式访问元素 
+* append 追加元素 
+* len 获取元素数量  cap 获取切片容容量
+* 推荐写法：a1 := make([]type, 0, capacity)
+
+内存数据结构：
+```go
+
+type slice struct {
+	array unsafe.Pointer
+	len   int
+	cap   int
+}
+
+```
+切片的结构体由3部分构成，Pointer 是指向一个数组的指针，len 代表当前切片的长度，cap 是当前切片的容量。cap 总是大于等于 len 的。
+ ![数据结构](./images/slice1.png)
+
+### 子切片
+
+切片都可以通过[start:end]的形式来获取子切片： 
+* slice[start:end]，获得[start, end)之间的元素 
+* slice[:end]，获得[0, end)之间的元素
+* slice[start:]，获得[start, len(arr))之间的元素
+
+```go
+fmt.Println("subSliceDemo()===========================")
+array := []int{10, 20, 30, 40, 50, 60}
+fmt.Printf("array: %v, len %d, cap: %d \n",array, len(array), cap(array))
+sliceA := array[2:5]
+sliceB := array[1:3]
+fmt.Printf("sliceA: %v, len %d, cap: %d \n",sliceA, len(sliceA), cap(sliceA))
+fmt.Printf("sliceB: %v, len %d, cap: %d \n",sliceB, len(sliceB), cap(sliceB))
+
+```
+![subslice](./images/slice2.png)
+
+子切片和切片共享底层数据，当子切片发生数据结构变化，不共享底层数据
+
+```go
+func shareSliceDemo() {
+	fmt.Println("shareSliceDemo()===========================")
+	a1 := []int{1, 2, 3, 4, 5, 6, 7, 8}
+	a2 := a1[2:]
+	fmt.Printf("a1: %v, pointer = %p, len %d, cap: %d \n", a1, &a1, len(a1), cap(a1))
+	fmt.Printf("a2: %v, pointer = %p, len %d, cap: %d \n", a2, &a2, len(a2), cap(a2))
+	//a1, a2共享底层数据
+	a2[0] = 9
+	fmt.Printf("a1: %v, pointer = %p, len %d, cap: %d \n", a1, &a1, len(a1), cap(a1))
+	fmt.Printf("a2: %v, pointer = %p, len %d, cap: %d \n", a2, &a2, len(a2), cap(a2))
+
+	//a2结构发生变化，a1,a2不共享底层数据
+	a2 = append(a2, 19)
+	fmt.Printf("a1: %v, pointer = %p, len %d, cap: %d \n", a1, &a1, len(a1), cap(a1))
+	fmt.Printf("a2: %v, pointer = %p, len %d, cap: %d \n", a2, &a2, len(a2), cap(a2))
+
+	a2[1] = 29
+	fmt.Printf("a1: %v, pointer = %p, len %d, cap: %d \n", a1, &a1, len(a1), cap(a1))
+	fmt.Printf("a2: %v, pointer = %p, len %d, cap: %d \n", a2, &a2, len(a2), cap(a2))
+}
+
+
+```
+输出结果
+```shell
+shareSliceDemo()===========================
+a1: [1 2 3 4 5 6 7 8], pointer = 0x1400011a108, len 8, cap: 8 
+a2: [3 4 5 6 7 8], pointer = 0x1400011a120, len 6, cap: 6 
+a1: [1 2 9 4 5 6 7 8], pointer = 0x1400011a108, len 8, cap: 8 
+a2: [9 4 5 6 7 8], pointer = 0x1400011a120, len 6, cap: 6 
+a1: [1 2 9 4 5 6 7 8], pointer = 0x1400011a108, len 8, cap: 8 
+a2: [9 4 5 6 7 8 19], pointer = 0x1400011a120, len 7, cap: 12 
+a1: [1 2 9 4 5 6 7 8], pointer = 0x1400011a108, len 8, cap: 8 
+a2: [9 29 5 6 7 8 19], pointer = 0x1400011a120, len 7, cap: 12 
+
+```
+
+
+### nil和空切片
+
+```go
+//nil切片
+var slice []int
+
+//空切片
+silce := make( []int , 0 )
+slice := []int{ }
+
+```
+空切片和 nil 切片的区别在于，空切片指向的地址不是nil，指向的是一个内存地址，但是它没有分配任何内存空间，即底层元素包含0个元素。
+
+### 切片扩容
+
+当一个切片的容量满了，就需要扩容了.怎么扩，扩容策略是什么？
+Go 中切片扩容的策略是这样的：
+* 首先判断，如果新申请容量（cap）大于2倍的旧容量（old.cap），最终容量（newcap）就是新申请的容量（cap）
+* 否则判断，如果旧切片的长度小于1024，则最终容量(newcap)就是旧容量(old.cap)的两倍，即（newcap=doublecap）
+* 否则判断，如果旧切片长度大于等于1024，则最终容量（newcap）从旧容量（old.cap）开始循环增加原来的 1/4，即（newcap=old.cap,for {newcap += newcap/4}）直到最终容量（newcap）大于等于新申请的容量(cap)，即（newcap >= cap）
+* 如果最终容量（cap）计算值溢出，则最终容量（cap）就是新申请容量（cap）
+
+扩容后是新数组 or 老数组 ？
+
+```go
+
+func extendSliceDemo() {
+	fmt.Println("extendSliceDemo()===========================")
+	slice := []int{10, 20, 30, 40}
+	newSlice := append(slice, 50)
+	fmt.Printf("Before slice = %v, Pointer = %p, len = %d, cap = %d\n", slice, &slice, len(slice), cap(slice))
+	fmt.Printf("Before newSlice = %v, Pointer = %p, len = %d, cap = %d\n", newSlice, &newSlice, len(newSlice), cap(newSlice))
+	newSlice[1] += 10
+	fmt.Printf("After slice = %v, Pointer = %p, len = %d, cap = %d\n", slice, &slice, len(slice), cap(slice))
+	fmt.Printf("After newSlice = %v, Pointer = %p, len = %d, cap = %d\n", newSlice, &newSlice, len(newSlice), cap(newSlice))
+}
+
+```
+输出结果：
+```shell
+
+extendSliceDemo()===========================
+Before slice = [10 20 30 40], Pointer = 0x1400011a228, len = 4, cap = 4
+Before newSlice = [10 20 30 40 50], Pointer = 0x1400011a240, len = 5, cap = 8
+After slice = [10 20 30 40], Pointer = 0x1400011a228, len = 4, cap = 4
+After newSlice = [10 30 30 40 50], Pointer = 0x1400011a240, len = 5, cap = 8
+
+```
+
+### 切片建议操作
+* a1 := make([]type, 0, capacity)
+* 子切片作为只读，不修改不append
+* s = append(s, data)
+
+### Refererces
+* https://halfrost.com/go_slice/
+
 
 
 
