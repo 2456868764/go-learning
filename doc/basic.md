@@ -320,7 +320,7 @@ The default format for %v is:
 
 # slice
 ### 基本使用
-数组语法：[]`type`
+切片语法：[]`type`
 * 直接初始化 a1 := []type{...}
 * make初始化:make([]type, length, capacity) 
 * slice[i] 的形式访问元素 
