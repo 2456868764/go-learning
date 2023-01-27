@@ -585,7 +585,43 @@ func forRange() {
 
 ```
 
+#if-else
+if-else和其他语言也差不多
 
+```go
+
+func checkGrade(grade int) {
+	if grade >= 80 {
+		fmt.Printf("Grade A\n")
+	} else if grade < 80 && grade >= 60 {
+		fmt.Printf("Grade B\n")
+	} else {
+		fmt.Printf("Grade C\n")
+	}
+}
+
+```
+
+带有局部变量声明if-else： 
+* distance只能在if-else作用域里使用 
+* 脱离了if-else作用域里，则不能再使用
+
+```go
+
+func checkDistance(begin int, end int) {
+
+	//distance变量只在if-else语句作用域里使用
+	if distance := end - begin; distance > 50 {
+		fmt.Printf("distance: %d is far away\n", distance)
+	} else {
+		fmt.Printf("distance: %d is so closed\n", distance)
+	}
+
+	//这里不能访问distance变量
+	//fmt.Printf("distance is： %d\n", distance)
+}
+
+```
 
 
 
