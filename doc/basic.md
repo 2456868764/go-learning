@@ -618,7 +618,7 @@ func checkDistance(begin int, end int) {
 	}
 
 	//这里不能访问distance变量
-	//fmt.Printf("distance is： %d\n", distance)
+	//fmt.Printf("distance: %d\n", distance)
 }
 
 ```
