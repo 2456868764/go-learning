@@ -585,7 +585,7 @@ func forRange() {
 
 ```
 
-#if-else
+# if-else
 if-else和其他语言也差不多
 
 ```go
