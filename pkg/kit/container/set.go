@@ -19,6 +19,6 @@ func (s Set)Delete(item SetItem) {
 	delete(s, item)
 }
 
-func (s Set)len() int{
+func (s Set)Len() int{
 	return len(s)
 }
