@@ -681,7 +681,66 @@ func fFallThrough(a int){
 	}
 }
 ```
+# map
+基础语法：make(map[KeyType]ValueType)
 
+```go
+// 创建一个容量是4的map
+	salary := make(map[string]int, 2)
+	// 没有指定容量
+	d1 := make(map[string]string)
+	// 直接初始化
+	d2 := map[string]string{
+		"Tom": "Jerry",
+	}
+
+	// 赋值
+	salary["steve"] = 1200
+	salary["jun"] = 1800
+
+	d1["hello"] = "world"
+	// 赋值
+	d2["hello"] = "world"
+	// 取值
+	val := salary["steve"]
+	println(val)
+
+	// 使用两个返回值，ok表示map有没有这个key
+	val, ok := salary["tom"]
+	if !ok {
+		println("tom not found")
+	}
+
+	for name, num := range salary {
+		fmt.Printf("%s => %s \n", name, num)
+	}
+
+    //删除
+    delete(salary, "jun")
+	
+```
+
+# type
+基础语法type定义
+### type 定义 
+* type 名字 interface {} 
+* type 名字 struct {} 
+* type 名字 别的类型 
+* type 别名 = 别的类型
+* 结构体初始化 
+* 指针与方法接收器 
+* 结构体如何实现接口
+
+### interface 定义
+基本语法 type 名字 interface {} 
+* 里面只能有方法，方法也不需要func关键字 
+* 接口是一组行为的抽象 
+* 尽量用接口，以实现面向接口编程
+
+### struct 定义
+基本语法: type Name struct { fieldName FieldType // ... }
+
+*  结构体和结构体的字段都遵循大小写控制访问性的原则
 
 
 
