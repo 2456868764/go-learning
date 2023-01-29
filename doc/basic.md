@@ -685,8 +685,8 @@ func fFallThrough(a int){
 基础语法：make(map[KeyType]ValueType)
 
 ```go
-// 创建一个容量是4的map
-	salary := make(map[string]int, 2)
+    // 创建一个容量是4的map
+	salary := make(map[string]int, 4)
 	// 没有指定容量
 	d1 := make(map[string]string)
 	// 直接初始化
@@ -712,7 +712,7 @@ func fFallThrough(a int){
 	}
 
 	for name, num := range salary {
-		fmt.Printf("%s => %s \n", name, num)
+		fmt.Printf("%s => %d \n", name, num)
 	}
 
     //删除
