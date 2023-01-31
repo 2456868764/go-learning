@@ -56,3 +56,5 @@
 # reference
 * https://geektutu.com/post/geerpc.html
 * https://halfrost.com/
+* https://github.com/jiujuan/go-collection
+* https://gopl-zh.github.io/
