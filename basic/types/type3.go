@@ -1,0 +1,35 @@
+package main
+
+import (
+	"fmt"
+	"unsafe"
+)
+
+func main() {
+	f1()
+	f2()
+	f3()
+}
+
+func f1() {
+	var a int32 = 10
+	var b int64 = int64(a)
+	var c float32 = 12.3
+	var d float64 = float64(c)
+	fmt.Printf("a:%d, b:%d, c:%f, d:%f\n", a, b, c, d)
+}
+
+func f2() {
+	var a int = 10
+	var b *int = &a
+	var c *int64 = (*int64)(unsafe.Pointer(b))
+	fmt.Println(*c)
+}
+
+func f3()  {
+	var a interface{} = 10
+	_,isInt := a.(int) // 进行类型的断言的变量必须是空接口
+	if isInt{
+		fmt.Println(a)
+	}
+}

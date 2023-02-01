@@ -721,27 +721,365 @@ func fFallThrough(a int){
 ```
 
 # type
-基础语法type定义
-### type 定义 
-* type 名字 interface {} 
-* type 名字 struct {} 
-* type 名字 别的类型 
-* type 别名 = 别的类型
-* 结构体初始化 
-* 指针与方法接收器 
-* 结构体如何实现接口
 
-### interface 定义
-基本语法 type 名字 interface {} 
+### interface
+基本语法:
+* type 名字 interface {} 
 * 里面只能有方法，方法也不需要func关键字 
 * 接口是一组行为的抽象 
 * 尽量用接口，以实现面向接口编程
 
-### struct 定义
-基本语法: type Name struct { fieldName FieldType // ... }
+```go
 
-*  结构体和结构体的字段都遵循大小写控制访问性的原则
+// 首字母小写，是一个包私有的接口
+type kid interface {
+    name() string
+    age() int
+}
+
+// 首字母大写，是一个包外可访问的接口
+type Student interface {
+    // 这里可以有任意多个方法，不过一般建议是小接口, 即接口里面不会有很多方法
+    // 方法声明不需要func 关键字
+    Eat()
+}
+
+```
+
+
+### struct 基本语法
+1. 基本语法
+* type 名字 struct {}
+* type 名字 别的类型 
+* type 别名 = 别的类型
+
+结构体和结构体的字段都遵循大小写控制访问性的原则
+
+2. 结构体初始化
+```go
+
+func main() {
+	// fish1 是 *Fish
+	fish1 := &Fish{Color: "Red", Price: 100}
+	fish1.Swim()
+
+	fish2 := Fish{Color: "Blue", Price: 120}
+	fish2.Swim()
+
+	// fish3 是 *Fish
+	fish3 := new(Fish)
+	fish3.Swim()
+
+
+	// 当你声明这样的时候，GO分配好内存
+	// 不用担心空指针的问题，以为它压根就不是指针
+	var fish4 Fish
+	fish4.Swim()
+
+	// fish5 就是一个指针了
+	var fish5 *Fish
+	// 这边会直接panic 掉
+	fish5.Swim()
+
+
+	// 赋值,初始化按字段名字赋值
+	fish6 := Fish{
+		Color: "Green",
+		Price: 200,
+	}
+	fish6.Swim()
+
+
+	// 后面再单独赋值
+	fish7 := Fish{}
+	fish7.Color = "Purple"
+	fish7.Swim()
+
+}
+
+type Fish struct {
+	Color string
+	Price uint32
+}
+
+func (f *Fish) Swim() {
+	fmt.Printf("fish swim color:%s price:%d\n", f.Color, f.Price)
+}
+
+```
+
+3. type 名字 别的类型
+
+```go
+
+
+func main() {
+
+	glodDog := GoldDog{Name: "glodGog"}
+	//这里不同调用 Bark()
+	//glodDog.Bark()
+	glodDog.Swim()
+
+	//转成Dog类型，就可以调用Dog类型方法
+	dog := Dog(glodDog)
+	dog.Bark()
+
+    strongDog := StrongDog{Name: "strongDog"}
+    strongDog.Swim()
+    //这里调用的StrongDog Bark()方法
+    strongDog.Bark()
+
+    dog2 := Dog(strongDog)
+    //这里调用的Dog类型的Bark()方法
+    dog2.Bark()
+
+}
+
+type Dog struct {
+	Name string
+}
+
+func(d *Dog) Bark() {
+	fmt.Printf("Dog barking nmae: %s\n", d.Name)
+}
+
+//定义一个新类型，这里完全定义一个新的类型
+type GoldDog Dog
+
+func (g *GoldDog) Swim() {
+	fmt.Printf("GlodDog swim nmae: %s\n", g.Name)
+}
+
+type StrongDog Dog
+
+func (s *StrongDog) Bark() {
+	fmt.Printf("Strong Dog barking nmae: %s\n", s.Name)
+}
+
+func (s *StrongDog) Swim() {
+	fmt.Printf("Strong Dog swim nmae: %s\n", s.Name)
+}
+
+```
+
+4. type 别名 = 别的类型
+
+```go
+
+func main() {
+	var cat fakeCat = fakeCat{Name: "a little cat"}
+	cat.MiaoMiao()
+}
+
+type Cat struct {
+	Name string
+}
+
+func (c *Cat) MiaoMiao() {
+	fmt.Printf("cat miaomaio name:%s\n", c.Name)
+}
+
+type fakeCat = Cat
+
+```
+
+### struct指针与方法接收器
+* 设计不可变对象，用结构体接收器 
+* 其它用指针, 不清楚情况下就用指针
+
+```go
+
+func main() {
+
+	// 因为m是结构体，所以方法调用的时候它数据是不会变的
+	m := Model{
+		Name: "John",
+		Age: 20,
+	}
+	m.ChangeName("Tome!")
+	m.ChangeAge(30)
+	fmt.Printf("%v \n", m)
+
+	// mp是指针，所以内部数据是可以被改变的
+	mp := &Model{
+		Name: "Ross",
+		Age: 32,
+	}
+
+	// 因为ChangeName的接收器是结构体,所以mp的数据还是不会变
+	mp.ChangeName("Emma Changed!")
+	mp.ChangeAge(70)
+
+	fmt.Printf("%v \n", mp)
+}
+
+type Model struct {
+	Name string
+	Age int
+}
+
+// 结构体接收器
+func (m Model) ChangeName(newName string)  {
+	m.Name = newName
+}
+
+// 指针接收器
+func (m *Model) ChangeAge(newAge int) {
+	m.Age = newAge
+}
+
+```
+
+
+### 结构体如何实现接口
+只要结构体实现接口定义的方法。 Go结合了接口，编译器静态类型检查（该类型是否实现了某个接口），运行时动态转换，并且不需要显式地声明类型要实现某个接口。这个特性可以在不修改已有代码的情况下定义和实现新接口，从而提供了动态语言的优点，但却没有动态语言在运行时可能发生错误的问题。
+
+1. 标准库的 io.Writer 接口:
+```go
+package io
+
+type Writer interface {
+    Write(p []byte) (n int, err error)
+}
+```
+2. 上面是标准库中的 io.Writer 接口，我们可以在自己的模块中实现它:
+
+```go
+package main
+
+type MyBuffer struct{} // 定义时并不需要 import "io"
+
+func (m MyBuffer) Write(p []byte) (n int, err error) {
+    return 0, nil
+}
+
+```
+3. 然后，在使用 io.Writer 类型作为参数的函数或方法中，可以直接传入 MyBuffer 类型，比如 log 包的 SetOutput 方法:
+
+```go
+
+package log
+
+func SetOutput(w io.Writer) {
+	output = w
+}
+
+```
+
+上述代码中，通过接口规则，非常优雅地实现了接口的具体实现与解耦。在Go的标准库中，更是将上述准则应用到几乎所有Go包，多态用得越多，代码就相对越少。这被认为是Go编程最佳实践之一。
 
 
 
 
+### 接口完整性检查
+1. 编译期间检测
+就是通过静态分析来确定类型是否实现了某个接口，如果检测不通过，则编译过程报错并退出。通常将这种方式称为 接口完整性检查。
+
+// 强制类型 Martian 必须实现接口 Person 的所有方法
+var _ Person = (*Martian)(nil)
+
+```go
+
+type Person interface {
+	Name() string
+	Age() int
+}
+
+type Martian struct {
+	
+}
+
+func (m Martian) Name() string {
+	return "name"
+}
+
+func (m Martian) Age() int {
+	return 0
+}
+
+// 强制类型 Martian 必须实现接口 Person 的所有方法
+var _ Person = (*Martian)(nil)
+// 1. 声明一个 _ 变量 (不使用)
+// 2. 把一个 nil 转换为 (*Martian)，然后再转换为 Person
+// 3. 如果 Martian 没有实现 Person 的全部方法，则转换失败，编译器报错
+
+func main() {
+	fmt.Printf("implement validation")
+}
+
+```
+
+2. 通过反射
+
+```go
+	// 获取 Person 类型
+	p := reflect.TypeOf((*Person)(nil)).Elem()
+
+	// 获取 Martian 结构体指针类型
+	m := reflect.TypeOf(&Martian{})
+
+	// 判断 Martian 结构体类型是否实现了 Person 接口
+	fmt.Println(m.Implements(p))
+
+```
+
+3. 通过类型断言
+
+```go
+	// 变量必须声明为 interface 类型
+	var m interface{}
+	m = &Martian{}
+	if v, ok := m.(Person); ok {
+		fmt.Printf("name = %s, age = %d\n", v.Name(), v.Age())
+	} else {
+		fmt.Println("Martian does not implements Person")
+	}
+```
+
+### 强制类型转换和类型断言
+
+1. 强制类型转换语法：
+
+```go
+type(v)
+```
+普通变量类型int,float,string 都可以使用 type (a)这种形式来进行强制类型转换
+```go
+func f1() {
+	var a int32 = 10
+	var b int64 = int64(a)
+	var c float32 = 12.3
+	var d float64 = float64(c)
+	fmt.Printf("a:%d, b:%d, c:%f, d:%f\n", a, b, c, d)
+}
+
+```
+
+指针的强制类型转换需要用到unsafe包中的函数实现
+```go
+func f2() {
+	var a int = 10
+	var b *int = &a
+	var c *int64 = (*int64)(unsafe.Pointer(b))
+	fmt.Println(*c)
+}
+
+```
+
+2. 类型断言语法
+```go
+interface{}.(type)
+```
+进行类型的断言的变量必须是空接口
+
+```go
+func f3()  {
+	var a interface{} = 10
+	_,isInt := a.(int) // 进行类型的断言的变量必须是空接口
+	if isInt{
+		fmt.Println(a)
+	}
+}
+
+
+```
