@@ -9,6 +9,7 @@ func main() {
 	f1()
 	f2()
 	f3()
+	f4()
 }
 
 func f1() {
@@ -32,4 +33,25 @@ func f3()  {
 	if isInt{
 		fmt.Println(a)
 	}
+}
+
+type interf interface {
+	Run()
+}
+
+type Server struct {
+	
+}
+
+func (s Server) Run() {
+}
+
+var _ interf = (*Server)(nil)
+
+func f4() {
+	var server interface{} =  Server{}
+	if _ , ok:= server.(interf); ok {
+		fmt.Println("run as server\n")
+	}
+
 }
