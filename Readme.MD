@@ -1,55 +1,66 @@
 # 重学golang
 
-# 涉及内容
-## 基础部分
-* main
-* package
-* fmt
-* for 
-* ifelse
-* switch
-* string
-* var
-* func
-* map
-* array
-* slice
-* struct
-* type
-* goroutine
-* channel
-* select
-* defer
-* errors
-* context
-* atomic
-* http
+# 内容
+- [x] 基础部分
+    - [x] main
+    - [x] package
+    - [x] string
+    - [x] fmt
+    - [x] for 
+    - [x] ifelse
+    - [x] switch
+    - [x] var
+    - [x] func
+    - [x] map
+    - [x] array-slice
+    - [x] struct
+    - [x] type
+    - [ ] goroutine
+    - [ ] channel
+    - [ ] select
+    - [ ] defer
+    - [ ] errors
+    - [ ] context
+    - [ ] http
+- [ ] 高级部分
+    - [ ] net
+    - [ ] sql
+    - [ ] sync
+    - [ ] unsafe
+    - [ ] 泛型
+    - [ ] 代码生成器
+    - [ ] 内存
 
-## 高级部分
-* net
-* reflect
-* sql
-* sync
-* unsafe
-* 泛型
-* 代码生成器
-* 内存
+- [ ] 设计模式
+    - [ ] 单例
+    - [ ] Builder
+    - [ ]
 
-# 设计模式
-常用代码模式和设计模式
+- [ ] 项目实践
+    - [ ] web
+    - [ ] cache
+    - [ ] rpc
+    - [ ] orm
 
-## 项目
-* web
-* cache
-* rpc
-* orm
+- [ ] Kit
+    - [x] Set
+    - [ ] ArrayList
+    - [ ] 
+    - [ ] 
 
-## 工具Kit
 
-## 第三方库
-
-## 工程实践
-
+- [ ] 第三方库
+    - [ ] Kratos
+    - [ ] Gin
+    - [ ] GORM
+    - [ ] go-dubbo
+    
+- [ ] 工程实践
+    - [ ] 错误处理
+    - [ ] 异步调用
+    - [ ] 交叉编译
+    - [ ] 测试
+    - [ ] 微服务和服务治理
 
 
 
