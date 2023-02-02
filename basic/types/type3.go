@@ -29,8 +29,8 @@ func f2() {
 
 func f3()  {
 	var a interface{} = 10
-	_,isInt := a.(int) // 进行类型的断言的变量必须是空接口
-	if isInt{
+	// 进行类型的断言的变量必须是空接口
+	if _, ok := a.(int); ok {
 		fmt.Println(a)
 	}
 }
