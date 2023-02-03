@@ -72,3 +72,4 @@
 * https://halfrost.com/
 * https://github.com/jiujuan/go-collection
 * https://gopl-zh.github.io/
+* https://go.dev/doc/effective_go
