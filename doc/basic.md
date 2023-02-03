@@ -1080,3 +1080,74 @@ func f3()  {
 	}
 }
 ```
+
+### 匿名组合
+"Go语言的面向对象机制与一般语言不同。 它没有类层次结构， 甚至可以说没有类； 仅仅通过组合（ 而不是继承） 简单的对象来构建复杂的对象。" -- 《Go语言圣经》
+
+匿名组合不是继承，方法的接者没变。
+
+当我们嵌入一个类型，这个类型的方法就变成了外部类型的方法，但是当它被调用时，方法的接受者是内部类型(嵌入类型)，而非外部类型。— Effective Go
+1. 接口匿名组合
+```go
+type Reader interface {
+	Read(p []byte) (n int, err error)
+}
+
+type Writer interface {
+	Write(p []byte) (n int, err error)
+}
+
+type ReadWriterI interface {
+	Reader
+	Writer
+}
+
+
+```
+2. 结构体匿名组合
+
+```go
+
+
+type Employee struct {
+	Name string
+}
+func(p *Employee)Do() {
+	fmt.Printf("employee:%s do\n", p.Name)
+}
+
+type TechLeader struct {
+	Employee
+	Level string
+}
+func(t *TechLeader)Plan() {
+	t.Do()
+	t.Employee.Do()
+	fmt.Printf("tech leader:%s level:%s plan\n", t.Name, t.Level)
+}
+
+
+```
+
+3. 结构体指针匿名组合
+
+```go
+
+type Job struct {
+	Command string
+	*log.Logger
+}
+
+func (job *Job) Printf(format string, args ...interface{}) {
+	job.Logger.Printf("%q: %s", job.Command, fmt.Sprintf(format, args...))
+}
+
+func NewJob(command string, logger *log.Logger) *Job {
+	return &Job{command, logger}
+}
+
+func NewJob2(command string) *Job {
+	return &Job{command, log.New(os.Stderr, "Job: ", log.Ldate)}
+}
+
+```
