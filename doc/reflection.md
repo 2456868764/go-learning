@@ -9,6 +9,9 @@ value对应是reflect.Value， type对应是reflect.Type类型
 * reflect.Type 用于操作类信息，只能读取
 * reflect.Type 可以通过reflect.Value得到，但是反过来则不行。
 
+
+
+
 ## reflect.Type数据结构和方法
 在reflect包中，有一个描述类型公共信息的通用数据结构rtype。从源码的注释上看，它和 interface 里面的 _type 是同一个数据结构。它们俩只是因为包隔离，加上为了避免循环引用，所以在这边又复制了一遍。
 ```go
@@ -218,6 +221,11 @@ type Value struct {
 }
 ```
 ## Kind
+
+* reflect 包有一个很强的假设：操作之前你是知道操作的是什么 Kind, 调用之前要Kind判断一下
+* Kind 是一个枚举值，用来判断操作的对应类型，例如是否是指针、是否 是数组、是否是切片等 
+* 用 reflect 的方法，如果调用方法不对，直接就 panic。 在调用 API 之前一定要先看注释，看上面reflect.Type专有方法,确认在什么样的情况下可以调用！
+
 ```go
 // A Kind represents the specific kind of type that a Type represents.
 // The zero Kind is not a valid kind.
@@ -255,13 +263,40 @@ const (
 
 ```
 
-## 基本操作
+## 指针和指针指向的结构体
 
-1. 从接口变量中获取value和type信息
+如果是指针类型，可以通过 .Elem() 方法获取对应的实际值。
+1. 通过type判断是否指针类型，返回具体的结构体类型 
+2. 通过value判断是否指针类型，返回具体的结构体数据
+
 
 ```go
 
-func main() {
+func indirectReflectType(reflectType reflect.Type) reflect.Type {
+	if reflectType.Kind() == reflect.Pointer {
+		return reflectType.Elem()
+	}
+	return reflectType
+}
+
+func indirectReflectValue(reflectValue reflect.Value) reflect.Value {
+	if reflectValue.Kind() == reflect.Pointer {
+		return reflectValue.Elem()
+	}
+	return reflectValue
+}
+
+
+```
+
+
+## 基本操作
+
+1. 从接口变量中获取value和type信息
+```go
+
+func f1() {
+	fmt.Println("f1()================================")
 	a := 1234
 	ty1 := reflect.TypeOf(a)
 	va1 := reflect.ValueOf(a)
@@ -284,7 +319,113 @@ func main() {
 }
 ```
 
-2. 
+2. 从反射对象中获得接口值
+如果得到了一个类型为reflect.Value的变量，可以通过下面的方式，获得变量的信息。
+如果知道v的真实类型，直接转化成对应的类型:
 
+```go
+
+r := v.Interface().(已知类型)
+
+```
+
+```go
+
+func f2() {
+	fmt.Println("f12()================================")
+	a := 126.54
+	val := reflect.ValueOf(a)
+	b := val.Interface().(float64)
+	fmt.Printf("a :%f b:%f\n", a, b)
+	book := Book{
+		Name: "eBRF",
+		Price: 129,
+	}
+	fmt.Printf("book :%#v \n", book)
+	valb := reflect.ValueOf(book)
+	rbook := valb.Interface().(Book)
+	fmt.Printf("book :%#v \n", rbook)
+}
+
+```
+
+3. 若要修改反射对象，值必须可修改
+
+* 指针类型 Type 转成值类型 Type。指针类型必须是 *Array、*Slice、*Pointer、*Map、*Chan 类型，否则会发生 panic。Type 返回的是内部元素的 Type。
+```go
+// Elem returns element type of array a.
+func (a *Array) Elem() Type { return a.elem }
+
+// Elem returns the element type of slice s.
+func (s *Slice) Elem() Type { return s.elem }
+
+// Elem returns the element type for the given pointer p.
+func (p *Pointer) Elem() Type { return p.base }
+
+// Elem returns the element type of map m.
+func (m *Map) Elem() Type { return m.elem }
+
+// Elem returns the element type of channel c.
+func (c *Chan) Elem() Type { return c.elem }
+```
+* 值类型 Type 转成指针类型 Type。PtrTo 返回的是指向 t 的指针类型 Type。
+
+```go
+// PtrTo returns the pointer type with element t.
+// For example, if t represents type Foo, PtrTo(t) represents *Foo.
+func PtrTo(t Type) Type {
+	return t.(*rtype).ptrTo()
+}
+```
+
+reflect.Value是通过reflect.ValueOf(X)获得的，只有当X是指针的时候，才可以通过reflec.Value修改实际变量X的值。
+
+```go
+func f3() {
+	var a float64 = 2.4
+	v := reflect.ValueOf(a)
+	v.SetFloat(76.1) // Error: 这里 panic.
+}
+```
+
+```go
+func f4() {
+	var a float64 = 2.4
+	v := reflect.ValueOf(&a)
+	p := v.Elem()
+	p.SetFloat(76.1)
+}
+
+```
+
+4. Type 和 Value 相互转换
+    1. 由于 Type 中只有类型信息，所以无法直接通过 Type 获取实例对象的 Value，但是可以通过 New() 这个方法得到一个指向 type 类型的指针，值是零值。
+    2. 由于反射对象 Value 中本来就存有 Tpye 的信息，所以 Value 向 Type 转换比较简单。
+
+
+
+5. Value 指针转换成值 
+   1. 把指针的 Value 转换成值 Value 有 2 个方法 Indirect() 和 Elem()。
+   2. 将值 Value 转换成指针的 Value 只有 Addr() 这一个方法。
+
+
+## 反射整体结构关系总结
+
+## 反射遍历
+
+
+## 反射输出 struct 字段名字和值
+
+## 反射输出方法信息并且执行调用
+
+
+## 开源反射实践
+
+### 开源：Dubbo-go 反射生成代理
+
+
+### 开源：反射copier
+
+https://github.com/jinzhu/copier
 
 
