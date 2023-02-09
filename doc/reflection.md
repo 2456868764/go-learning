@@ -469,7 +469,78 @@ func IterateMap(object any) ([]any, []any, error) {
 
 ## 反射输出 struct 字段名字和值
 
-## 反射输出方法信息并且执行调用
+```go
+
+func IterateFields(object any) (map[string]any, error) {
+	typ := indirectReflectType(reflect.TypeOf(object))
+	if typ.Kind() != reflect.Struct {
+		return nil, errors.New("type is not supported")
+	}
+
+	val := indirectReflectValue(reflect.ValueOf(object))
+	numFields := typ.NumField()
+	fields := make(map[string]any, numFields)
+	for i := 0; i < numFields; i++ {
+		fieldVal := val.Field(i)
+		fieldTyp := typ.Field(i)
+
+		if fieldTyp.IsExported() {
+			//公开字段
+			fields[fieldTyp.Name] = fieldVal.Interface()
+		} else {
+			fields[fieldTyp.Name] = reflect.Zero(fieldTyp.Type).Interface()
+		}
+	}
+	return fields, nil
+}
+
+```
+
+## 反射输出方法信息
+
+```go
+
+type MethodInfo struct {
+	Name      string
+	ParamsIn  []reflect.Type
+	ParamsOut []reflect.Type
+}
+
+func IterateMethods(object any) (map[string]*MethodInfo, error) {
+	typ := reflect.TypeOf(object)
+	if !(typ.Kind() == reflect.Struct || typ.Kind() == reflect.Pointer) {
+		return nil, errors.New("type is not supported")
+	}
+
+	numMethods := typ.NumMethod()
+	methodInfos := make(map[string]*MethodInfo, numMethods)
+	for i := 0; i < numMethods; i++ {
+		method := typ.Method(i)
+		numIns := method.Type.NumIn()
+		numOuts := method.Type.NumOut()
+		paramsIn := make([]reflect.Type, 0, numIns)
+		paramsOut := make([]reflect.Type, 0, numOuts)
+		// 第一个参数是接收器
+		for j := 0; j < numIns; j++ {
+			paramsIn = append(paramsIn, method.Type.In(j))
+		}
+
+		for j := 0; j < numOuts; j++ {
+			paramsOut = append(paramsOut, method.Type.Out(j))
+		}
+
+		methodInfos[method.Name] = &MethodInfo{
+			Name:      method.Name,
+			ParamsIn:  paramsIn,
+			ParamsOut: paramsOut,
+		}
+	}
+
+	return methodInfos, nil
+
+}
+
+```
 
 
 ## 开源反射实践
