@@ -400,7 +400,7 @@ func f4() {
 
 4. Type 和 Value 相互转换
     1. 由于 Type 中只有类型信息，所以无法直接通过 Type 获取实例对象的 Value，但是可以通过 New() 这个方法得到一个指向 type 类型的指针，值是零值。
-    2. 由于反射对象 Value 中本来就存有 Tpye 的信息，所以 Value 向 Type 转换比较简单。
+    2. 由于反射对象 Value 中本来就存有 Type 的信息，所以 Value 向 Type 转换比较简单。
 
 
 
@@ -412,7 +412,60 @@ func f4() {
 ## 反射整体结构关系总结
 
 ## 反射遍历
+1. 遍历 array, slice, string
 
+```go
+
+func IterateList(object any) ([]any, error) {
+	val := reflect.ValueOf(object)
+	typ := reflect.ValueOf(object)
+	kind := typ.Kind()
+	if !(kind == reflect.Array || kind == reflect.String || kind == reflect.Slice) {
+		return nil, errors.New("type is not supported")
+	}
+	len := val.Len()
+	list := make([]any, 0, len)
+	for i := 0; i < len; i++ {
+		element := val.Index(i)
+		list = append(list, element.Interface())
+	}
+
+	return list, nil
+
+}
+```
+
+
+2. 遍历 map
+
+```go
+
+func IterateMap(object any) ([]any, []any, error) {
+	val := reflect.ValueOf(object)
+	typ := reflect.ValueOf(object)
+	kind := typ.Kind()
+	if kind != reflect.Map {
+		return nil, nil, errors.New("type is not supported")
+	}
+	len := val.Len()
+	keys := make([]any, 0, len)
+	values := make([]any, 0, len)
+	for _, key := range val.MapKeys() {
+		keys = append(keys, key.Interface())
+		values = append(values, val.MapIndex(key).Interface())
+	}
+
+	//另外一种写法
+	//iterate := val.MapRange()
+	//for iterate.Next() {
+	//	keys = append(keys, iterate.Key().Interface())
+	//	values = append(values, iterate.Value().Interface())
+	//}
+
+	return keys, values, nil
+
+}
+```
 
 ## 反射输出 struct 字段名字和值
 
