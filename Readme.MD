@@ -44,6 +44,8 @@
     - [ ] cache
     - [ ] rpc
     - [ ] orm
+    - [ ] indexer
+    - [ ] message bus
 
 - [ ] Kit
     - [x] Set
