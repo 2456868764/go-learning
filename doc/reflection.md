@@ -410,6 +410,7 @@ func f4() {
 
 
 ## 反射整体结构关系总结
+![Reflection](./images/reflection.png)
 
 ## 反射遍历
 1. 遍历 array, slice, string
@@ -546,7 +547,6 @@ func IterateMethods(object any) (map[string]*MethodInfo, error) {
 ## 开源反射实践
 
 ### 开源：Dubbo-go 反射生成代理
-
 
 ### 开源：反射copier
 
