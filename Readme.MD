@@ -21,7 +21,7 @@
     - [ ] defer
     - [ ] errors
     - [ ] context
-    - [ ] http
+    - [x] http
 - [ ] 高级部分
     - [x] [reflect](./doc/reflection.md)
     - [ ] net
