@@ -320,7 +320,7 @@ func (srv *Server) newConn(rwc net.Conn) *conn {
 
 3. 新协程处理网络连接，构建request & response
 
-connn contruct如下
+conn struct如下
 ```go
 // A conn represents the server side of an HTTP connection.
 type conn struct {
@@ -416,6 +416,7 @@ type serverHandler struct {
 
 func (sh serverHandler) ServeHTTP(rw ResponseWriter, req *Request) {
 	handler := sh.srv.Handler
+	//如果没有指定handler， 初始化为DefaultServeMux
 	if handler == nil {
 		handler = DefaultServeMux
 	}
@@ -431,7 +432,7 @@ ServeMux结构体处理请求，找到在mux.m[path]对应处理器进行处理
 // ServeHTTP dispatches the request to the handler whose
 // pattern most closely matches the request URL.
 func (mux *ServeMux) ServeHTTP(w ResponseWriter, r *Request) {
-	//根据路由找到匹配的处理器
+	//_根据路由找到匹配的处理器_
 	h, _ := mux.Handler(r)
 	//处理，这里就到了我们注册处理函数
 	h.ServeHTTP(w, r)
@@ -497,7 +498,7 @@ func (mux *ServeMux) match(path string) (h Handler, pattern string) {
 
 
 ## 流程图总结
-![NetHTTP流程图](./images/nethttp.png)
+![NetHTTP流程图](./images/http.png)
 
 
 ## 总结
