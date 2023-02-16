@@ -501,13 +501,13 @@ func (mux *ServeMux) match(path string) (h Handler, pattern string) {
 
 
 ## 总结
-* mux的ServeHTTP方法通过调用其Handler方法寻找注册到路由上的handler函数，并调用该函数的ServeHTTP方法。
+* mux的ServeHTTP方法通过调用Handler方法查找路由上的handlerFunc，并调用该函数的ServeHTTP方法。
 
-* mux的Handler方法对URL简单的处理，然后调用handler方法，后者会创建一个锁，同时调用match方法返回一个handler和pattern。
+* mux的Handler方法对URL简单的处理，然后调用handler方法，后者会创建一个读锁，同时调用match方法返回一个handler和pattern。
 
-* 在match方法中，mux的m字段是map[string]muxEntry图，后者存储了pattern和handler处理器函数，因此通过迭代m寻找出注册路由的patten模式与实际url匹配的handler函数并返回。
+* 在match方法中，mux的m字段是map[string]muxEntry，其保存pattern和handler处理器函数，通过迭代m寻找出注册路由的patten模式与实际url匹配的handler函数并返回。
 
 * 返回的结构一直传递到mux的ServeHTTP方法，接下来调用handler函数的ServeHTTP方法，即注册函数HanderFunc，然后把response写到http.ResponseWriter对象返回给客户端。
 
-* 上述函数运行结束即`serverHandler{c.server}.ServeHTTP(w, w.req)`运行结束。接下来就是对请求处理完毕之后上希望和连接断开的相关逻辑。
+* 上述函数运行结束后， serverHandler{c.server}.ServeHTTP(w, w.req) 运行结束。接下来就是对请求处理完毕之后，断开连接相关连接。
 
