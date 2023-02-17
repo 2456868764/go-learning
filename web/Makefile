@@ -77,14 +77,12 @@ test: fmt vet lint ## Run tests.
 echoLDFLAGS:
 	@echo $(LDFLAGS)
 
-.PHONY: build
-build: appbuild
 
 .PHONY: all
 all:  test appbuild
 
-.PHONY: appbuild
-appbuild: ## Build binary with the crane manager.
+.PHONY: build
+build: ## Build binary with the crane manager.
 	CGO_ENABLED=0 GOOS=$(GOOS) go build -ldflags $(LDFLAGS) -o bin/httpbin cmd/main.go
 
 
