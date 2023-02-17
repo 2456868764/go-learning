@@ -75,7 +75,6 @@ General
 
 ## 具体实现
 
-### 第一步: 实现http.Handler接口
 1. 要实现 Handler接口
 ```go
 type Handler interface {
@@ -144,6 +143,26 @@ func main() {
 	engine.GET("/user-agent", v1.GetUserAgent)
 	engine.Run(":8080")
 }
+
+```
+6. 项目结构
+
+```shell
+.
+├── Dockerfile
+├── Makefile
+├── api
+│   └── v1
+│       └── api.go
+├── bin
+│   └── httpbin
+├── cmd
+│   └── main.go
+├── go.mod
+└── pkg
+    └── engine
+        └── engine.go
+
 
 ```
 
