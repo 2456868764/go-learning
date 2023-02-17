@@ -67,8 +67,8 @@ General
   vet              Run go vet against code.
   lint             Run golang lint against code
   test             Run tests.
-  build            Build binary with the crane manager.
-  image            Build docker image with the crane manager.
+  build            Build binary with the httpbin.
+  image            Build docker image with the httpbin.
   push-image       Push images.
 
 ```
