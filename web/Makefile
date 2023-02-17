@@ -82,12 +82,12 @@ echoLDFLAGS:
 all:  test appbuild
 
 .PHONY: build
-build: ## Build binary with the crane manager.
+build: ## Build binary with the httpbin.
 	CGO_ENABLED=0 GOOS=$(GOOS) go build -ldflags $(LDFLAGS) -o bin/httpbin cmd/main.go
 
 
 .PHONY: image
-image: ## Build docker image with the crane manager.
+image: ## Build docker image with the httpbin.
 	docker build --build-arg LDFLAGS=$(LDFLAGS) --build-arg PKGNAME=httpbin -t ${MANAGER_IMG} .
 
 
