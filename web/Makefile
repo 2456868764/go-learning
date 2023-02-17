@@ -19,7 +19,7 @@ REGISTRY_USER_NAME?=""
 REGISTRY_PASSWORD?=""
 
 # Image URL to use all building/pushing image targets
-MANAGER_IMG ?= "${REGISTRY}/${REGISTRY_NAMESPACE}/httpbin:${GIT_VERSION}"
+HTTPBIN_IMG ?= "${REGISTRY}/${REGISTRY_NAMESPACE}/httpbin:${GIT_VERSION}"
 
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
@@ -79,7 +79,7 @@ echoLDFLAGS:
 
 
 .PHONY: all
-all:  test appbuild
+all:  test build
 
 .PHONY: build
 build: ## Build binary with the httpbin.
@@ -88,7 +88,7 @@ build: ## Build binary with the httpbin.
 
 .PHONY: image
 image: ## Build docker image with the httpbin.
-	docker build --build-arg LDFLAGS=$(LDFLAGS) --build-arg PKGNAME=httpbin -t ${MANAGER_IMG} .
+	docker build --build-arg LDFLAGS=$(LDFLAGS) --build-arg PKGNAME=httpbin -t ${HTTPBIN_IMG} .
 
 
 .PHONY: push-image
@@ -96,4 +96,4 @@ push-image: ## Push images.
 ifneq ($(REGISTRY_USER_NAME), "")
 	docker login -u $(REGISTRY_USER_NAME) -p $(REGISTRY_PASSWORD) ${REGISTRY}
 endif
-	docker push ${MANAGER_IMG}
+	docker push ${HTTPBIN_IMG}
