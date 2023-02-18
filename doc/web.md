@@ -168,6 +168,170 @@ func main() {
 
 ```
 
+### 第二步：添加Context请求上下文和定义Routable & Router接口
+1. Context, 请求上下文。 我们为什么要构建一个请求上下文
+
+* 封装 net/http下ServeHTTP(w http.ResponseWriter, r *http.Request)接口中两个参数
+* 每个请求独立上下文，可以做很多事情，比如传递上下相关参数，便于后面开发Filter chain
+* 封装 公共工具方法，方便使用，减少重复代码
+
+```go
+
+type Context struct {
+
+	W http.ResponseWriter
+	R *http.Request
+	Path string
+	Method string
+	// Keys map 读写锁
+	mu sync.RWMutex
+	// 每个请求独立上下文传值用
+	Keys map[string]any
+}
+
+func NewContext(w http.ResponseWriter, r *http.Request) *Context {
+	context := &Context{
+		W: w,
+		R: r,
+		Path: r.URL.Path,
+		Method: r.Method,
+	}
+	return context
+}
+
+func (c *Context) ReadJsonObject(object any) error {
+	body, err := io.ReadAll(c.R.Body)
+	if err!= nil {
+		return err
+	}
+
+	return json.Unmarshal(body, object)
+}
+
+func (c *Context) ReponseJson(httpStatus int, object any) error {
+	c.SetHeader("Content-Type", "application/json")
+	c.Status(httpStatus)
+	bytes, err := json.Marshal(object)
+	if err!= nil {
+		return err
+	}
+	_, err = c.W.Write(bytes)
+	if err!= nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *Context)OKJson(object any) error {
+	return c.ReponseJson(http.StatusOK, object)
+}
+
+func (c *Context)ServerErrorJson(object any) error {
+	return c.ReponseJson(http.StatusInternalServerError, object)
+}
+
+func (c *Context)BadRequestJson(object any) error {
+	return c.ReponseJson(http.StatusBadRequest, object)
+}
 
 
+func (c *Context) PostForm(key string) string {
+	return c.R.FormValue(key)
+}
+
+func (c *Context) Query(key string) string {
+	return c.R.URL.Query().Get(key)
+}
+
+func (c *Context) GetHeader(key string) string {
+	return c.R.Header.Get(key)
+}
+
+func (c *Context) Status(code int) {
+	c.W.WriteHeader(code)
+}
+
+func (c *Context) SetHeader(key string, value string) {
+	c.W.Header().Set(key, value)
+}
+
+func (c *Context) StringFormat(code int, format string, values ...interface{}) {
+	c.SetHeader("Content-Type", "text/plain")
+	c.Status(code)
+	c.W.Write([]byte(fmt.Sprintf(format, values...)))
+}
+
+func (c *Context) StringOk(body string) {
+	c.SetHeader("Content-Type", "text/plain")
+	c.Status(http.StatusOK)
+	io.WriteString(c.W, body)
+}
+
+```
+
+2. 定义Routable & Router接口
+定义Routable & Router接口目的
+* 把 Engine 里 router 独立抽象出来一个接口路由器，Engine 把添加路由，处理路由功能交个这个接口具体实现类，这样可以解耦
+* 同时提供Router接口不同实现，目前实现基于Map结构，后续会实现基于前缀树更强功能路由器
+
+```go
+
+// Router 定义路由接口，可以用不同的实现，可以基于 map 和 前缀树的实现
+type Router interface {
+	ServerHTTP(c * Context)
+	Routable
+}
+
+func NewMapBasedRouter() Router {
+	router := &MapBasedRouter{
+		handlers: make(map[string]HandlerFunc),
+	}
+	return router
+}
+
+type MapBasedRouter struct {
+	handlers map[string]HandlerFunc
+}
+
+func (m MapBasedRouter) ServerHTTP(c *Context) {
+	routeKey := c.Method + "-" + c.Path
+	handler, ok := m.handlers[routeKey]
+	if !ok {
+		c.StringFormat(http.StatusNotFound, "Not Found Method: %s Path: %s", c.Method, c.Path)
+		return
+	}
+	handler(c)
+}
+
+func (m MapBasedRouter) AddRoute(method string, pattern string, handlerFunc HandlerFunc) error {
+	routeKey := method + "-" + pattern
+	m.handlers[routeKey] = handlerFunc
+	return nil
+}
+```
+
+3. 调整api 实现
+
+```go
+
+func GetUserAgent(c *engine.Context) {
+	ip := c.GetHeader("User-Agent")
+	c.StringOk(fmt.Sprintf("User-Agent=%s\n", ip))
+}
+
+func GetIP(c *engine.Context) {
+	ip := c.GetHeader("REMOTE-ADDR")
+	c.StringOk(fmt.Sprintf("IP=%s\n", ip))
+}
+
+func GetHeaders(c *engine.Context) {
+	content := ""
+	for k, v := range c.R.Header {
+		content += fmt.Sprintf("%s=%s\n", k, v)
+	}
+	c.StringOk(content)
+}
+
+```
 
