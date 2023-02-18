@@ -19,7 +19,7 @@ type MapBasedRouter struct {
 	handlers map[string]HandlerFunc
 }
 
-func (m MapBasedRouter) ServerHTTP(c *Context) {
+func (m *MapBasedRouter) ServerHTTP(c *Context) {
 	routeKey := c.Method + "-" + c.Path
 	handler, ok := m.handlers[routeKey]
 	if !ok {
@@ -29,7 +29,7 @@ func (m MapBasedRouter) ServerHTTP(c *Context) {
 	handler(c)
 }
 
-func (m MapBasedRouter) AddRoute(method string, pattern string, handlerFunc HandlerFunc) error {
+func (m *MapBasedRouter) AddRoute(method string, pattern string, handlerFunc HandlerFunc) error {
 	routeKey := method + "-" + pattern
 	m.handlers[routeKey] = handlerFunc
 	return nil
