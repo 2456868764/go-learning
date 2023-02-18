@@ -1,37 +1,38 @@
 package engine
 
 import (
-	"fmt"
 	"net/http"
 )
 
-type HandlerFunc func(w http.ResponseWriter, r *http.Request)
+
+// Routable 可以路由
+type Routable interface {
+	// AddRoute 添加一个路由，命中该路由的调用 handlerFunc 代码
+	AddRoute(method string, pattern string, handlerFunc HandlerFunc) error
+}
+
+// HandlerFunc 某个路由对应具体执行
+type HandlerFunc func(c *Context)
 
 type Engine struct {
-	router map[string]HandlerFunc
+	router Router
 }
 
 func New() *Engine {
 	engine := &Engine{
-		router: make(map[string]HandlerFunc),
+		router: NewMapBasedRouter(),
 	}
 	return engine
 }
 
 func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	routeKey := r.Method + "-" + r.URL.Path
-	handler, ok := e.router[routeKey]
-	if !ok {
-		w.WriteHeader(http.StatusNotFound)
-		fmt.Fprintf(w, "Not Found Method: %s Path: %s", r.Method, r.URL.Path)
-		return
-	}
-	handler(w, r)
+	c := NewContext(w, r)
+	e.router.ServerHTTP(c)
 }
 
-func (e *Engine) AddRoute(method string, pattern string, handler HandlerFunc) {
-	routeKey := method + "-" + pattern
-	e.router[routeKey] = handler
+func (e *Engine) AddRoute(method string, pattern string, handler HandlerFunc) error {
+	e.router.AddRoute(method, pattern, handler)
+	return nil
 }
 
 func (e *Engine) GET(pattern string, handler HandlerFunc) {
