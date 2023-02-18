@@ -55,6 +55,7 @@
 
 
 - [ ] 第三方库
+    - [ ] go-zero
     - [ ] Kratos
     - [ ] Gin
     - [ ] GORM
