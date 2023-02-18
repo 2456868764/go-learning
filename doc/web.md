@@ -271,6 +271,7 @@ func (c *Context) StringOk(body string) {
 ```
 
 2. 定义Routable & Router接口
+
 定义Routable & Router接口目的
 * 把 Engine 里 router 独立抽象出来一个接口路由器，Engine 把添加路由，处理路由功能交个这个接口具体实现类，这样可以解耦
 * 同时提供Router接口不同实现，目前实现基于Map结构，后续会实现基于前缀树更强功能路由器
@@ -294,7 +295,7 @@ type MapBasedRouter struct {
 	handlers map[string]HandlerFunc
 }
 
-func (m MapBasedRouter) ServerHTTP(c *Context) {
+func (m *MapBasedRouter) ServerHTTP(c *Context) {
 	routeKey := c.Method + "-" + c.Path
 	handler, ok := m.handlers[routeKey]
 	if !ok {
@@ -304,14 +305,62 @@ func (m MapBasedRouter) ServerHTTP(c *Context) {
 	handler(c)
 }
 
-func (m MapBasedRouter) AddRoute(method string, pattern string, handlerFunc HandlerFunc) error {
+func (m *MapBasedRouter) AddRoute(method string, pattern string, handlerFunc HandlerFunc) error {
 	routeKey := method + "-" + pattern
 	m.handlers[routeKey] = handlerFunc
 	return nil
 }
 ```
+3. 调整Engine实现
 
-3. 调整api 实现
+```go
+
+// Routable 可以路由
+type Routable interface {
+	// AddRoute 添加一个路由，命中该路由的调用 handlerFunc 代码
+	AddRoute(method string, pattern string, handlerFunc HandlerFunc) error
+}
+
+// HandlerFunc 某个路由对应具体执行
+type HandlerFunc func(c *Context)
+
+type Engine struct {
+	router Router
+}
+
+func New() *Engine {
+	engine := &Engine{
+		router: NewMapBasedRouter(),
+	}
+	return engine
+}
+
+func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	c := NewContext(w, r)
+	e.router.ServerHTTP(c)
+}
+
+func (e *Engine) AddRoute(method string, pattern string, handler HandlerFunc) error {
+	e.router.AddRoute(method, pattern, handler)
+	return nil
+}
+
+func (e *Engine) GET(pattern string, handler HandlerFunc) {
+	e.AddRoute(http.MethodGet, pattern, handler)
+}
+
+func (e *Engine) POST(pattern string, handler HandlerFunc) {
+	e.AddRoute(http.MethodPost, pattern, handler)
+}
+
+func (e *Engine) Run(addr string) error {
+	err := http.ListenAndServe(addr, e)
+	return err
+}
+```
+Engine实际就非常简单，都是委托给Router
+
+4. 调整api 实现
 
 ```go
 
