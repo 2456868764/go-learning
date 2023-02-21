@@ -20,7 +20,8 @@ type Engine struct {
 
 func New() *Engine {
 	engine := &Engine{
-		router: NewMapBasedRouter(),
+		//router: NewMapBasedRouter(),
+		router: NewTreeBasedRouter(),
 	}
 	return engine
 }

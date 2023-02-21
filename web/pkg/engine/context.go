@@ -18,14 +18,19 @@ type Context struct {
 	mu sync.RWMutex
 	// 每个请求独立上下文传值用
 	Keys map[string]any
+	//路由匹配数据
+	PathParams map[string]string
 }
 
 func NewContext(w http.ResponseWriter, r *http.Request) *Context {
 	context := &Context{
 		W: w,
 		R: r,
-		Path: r.URL.Path,
-		Method: r.Method,
+		PathParams: make(map[string]string),
+	}
+	if r!= nil {
+		context.Method = r.Method
+		context.Path = r.URL.Path
 	}
 	return context
 }
