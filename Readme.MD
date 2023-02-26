@@ -27,7 +27,7 @@
     - [ ] net
     - [ ] sql
     - [ ] sync
-    - [ ] unsafe
+    - [x] [unsafe](./doc/unsafe.md)
     - [ ] log
     - [ ] 泛型
     - [ ] 代码生成器
