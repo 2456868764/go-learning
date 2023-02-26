@@ -46,6 +46,8 @@
     - [ ] orm
     - [ ] indexer
     - [ ] message bus
+    - [ ] cmd
+    - [ ] api gateway
 
 - [ ] Kit
     - [x] Set
