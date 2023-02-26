@@ -115,7 +115,7 @@ ptr = 结构体内存起始地址 + 字段偏移量， 读写操作如下：
 unsafe.Pointer 表示一个对象起始地址，用 uintptr 表示偏移量
 
 unsafe.Pointer 和 uintptr  两者都是指针，区别如下：
-1. unsafe.Pointer是层面指针，对象 在GC标记复杂后， 会维护unsafe.Pointer值
+1. unsafe.Pointer 是Go层面指针，对象在GC标记-复制后， Go会维护 unsafe.Pointer 值
 2. uintptr 直接就是一个内存地址数字，GC后不会变化
 
 ## 用unsafe.Pointer 读写结构体
@@ -202,15 +202,15 @@ func (u *UnSafeAccessor) SetFieldInt(field string, val int) error {
 
 在不清楚字段具体类型情况， 可以用 reflect 拿到对应字段 type, 用 reflect.NewAt 把对应指针地址数据 转成 Type 类型的 Value
 ```go
-    ptr := unsafe.Pointer(uintptr(u.address) + fieldMeta.offset)
-	fieldVal := reflect.NewAt(fieldMeta.typ, ptr)
+ptr := unsafe.Pointer(uintptr(u.address) + fieldMeta.offset)
+fieldVal := reflect.NewAt(fieldMeta.typ, ptr)
 ```
 在清楚知道字段具体类型情况下， 用具体类型强制转换就可以
 
 ```go
 
-    ptr := unsafe.Pointer(uintptr(u.address) + fieldMeta.offset)
-	fieldVal := *(*int)(ptr)
+ptr := unsafe.Pointer(uintptr(u.address) + fieldMeta.offset)
+fieldVal := *(*int)(ptr)
 
 ```
 
