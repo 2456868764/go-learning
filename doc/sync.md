@@ -185,7 +185,7 @@ Go 内存模型，就是要解决两个问题
 程序存在多个 goroutine 去访问数据的时候，必须序列化的访问，如何保证序列化呢？我们可以采用 channel 或者是 sync 以及 sync/atomic 下面提供的同步语义来保证
 
 
-### Happens Before
+## Happens Before
 
 
 
@@ -197,12 +197,24 @@ Go 语言在 sync 包中提供了用于同步的一些基本原语，包括常�
 
 
 
-# Mutex
+# sync.Mutex & RWMutex
+
+Mutex 可以看做是锁，而 RWMutex 则是读写锁。 一般的用法是将 Mutex 或者 RWMutex 和需要被保 住的资源封装在一个结构体内。
+
+- 如果有多个 goroutine 同时读写的资源，就一定要保护起来。 
+- 如果多个 goroutine 只读某个资源，那就不需要保护。
 
 
-# RWMutex
+使用锁的时候，优先使用 RWMutex。
 
-# Cond
+- RWMutex：核心就是四个方法，RLock、 RUnlock、Lock、Unlock
+
+- Mutex：Lock 和 Unlock
+
+
+
+
+# sync.Cond
 
 
 # sync.Once
@@ -812,13 +824,41 @@ type WaitGroup struct {
 
 sync.noCopy 是一个特殊的私有结构体，tools/go/analysis/passes/copylock 包中的分析器会在编译期间检查被拷贝的变量中是否包含 sync.noCopy 或者实现了 Lock 和 Unlock 方法，如果包含该结构体或者实现了对应的方法就会报出以下错误：
 
+```go
+
+func main() {
+	wg := sync.WaitGroup{}
+	copywg := wg
+	fmt.Println(wg, copywg)
+
+	url := URL{Name: "hello"}
+	url2 := url
+	fmt.Println(url2, url)
+}
+
+type noCopy struct {
+}
+
+func (*noCopy) Lock()   {}
+func (*noCopy) Unlock() {}
+
+type URL struct {
+	noCopy noCopy
+	Name   string
+}
+
+```
+
 ```shell
-(base) ➜  go-learning git:(main) go vet advance/sync/nocopy.go
+(base) ➜  go-learning git:(main) go vet advance/sync/demo/nocopy.go
 # command-line-arguments
 advance/sync/nocopy.go:10:12: assignment copies lock value to copywg: sync.WaitGroup contains sync.noCopy
 advance/sync/nocopy.go:11:14: call of fmt.Println copies lock value: sync.WaitGroup contains sync.noCopy
 advance/sync/nocopy.go:11:18: call of fmt.Println copies lock value: sync.WaitGroup contains sync.noCopy
-
+advance/sync/nocopy.go:14:10: assignment copies lock value to url2: command-line-arguments.URL contains command-line-arguments.noCopy
+advance/sync/nocopy.go:15:14: call of fmt.Println copies lock value: command-line-arguments.URL contains command-line-arguments.noCopy
+advance/sync/nocopy.go:15:20: call of fmt.Println copies lock value: command-line-arguments.URL contains command-line-arguments.noCopy
+(
 ```
 
 这段代码会因为变量赋值或者调用函数时发生值拷贝导致分析器报错。
