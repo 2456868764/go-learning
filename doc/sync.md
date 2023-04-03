@@ -189,6 +189,21 @@ Go 内存模型，就是要解决两个问题
 
 
 
+# sync 包基本原语
+
+Go 语言在 sync 包中提供了用于同步的一些基本原语，包括常见的 sync.Mutex、sync.RWMutex、sync.WaitGroup、sync.Once 和 sync.Cond：
+
+![img.png](images/sync3.png)
+
+
+
+# Mutex
+
+
+# RWMutex
+
+# Cond
+
 
 # sync.Once
 
@@ -714,6 +729,284 @@ func (s *LFStack) Pop() int32 {
 
 # sync.WaitGroup
 
+WaitGroup 是用于同步多个 goroutine 之间工作的。常见场景是我们会把任务拆分给多个 goroutine 并行完成。在完成之后需要合并这些任务的结果，或者需要等到所有小任务都完成之后才能进入下一步。
+
+WaitGroup 是用于同步多个 goroutine 之间工作的。
+- 要在开启 goroutine 之前先加1 
+- 每一个小任务完成就减1 
+- 调用 Wait 方法来等待所有子任务
+
+完成容易犯错的地方是 +1 和 -1 不匹配： 
+- 加多了导致 Wait 一直阻塞，引起 goroutine 泄露 
+- 减多了直接就 panic
+
+```go
+
+import (
+	"fmt"
+	"sync"
+)
+
+func worker(i int) {
+	fmt.Println("worker: ", i)
+}
+
+func main() {
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		// 开始 goroutine 前 +1
+		wg.Add(1)
+		go func(i int) {
+			// 完成后减 1
+			defer wg.Done()
+			worker(i)
+		}(i)
+	}
+	// 等待
+	wg.Wait()
+	fmt.Println("main done")
+}
+
+```
+sync.WaitGroup 可以等待一组 Goroutine 的返回，一个比较常见的使用场景是批量发出 RPC 或者 HTTP 请求：
+
+```go
+requests := []*Request{...}
+wg := &sync.WaitGroup{}
+wg.Add(len(requests))
+
+for _, request := range requests {
+    go func(r *Request) {
+        defer wg.Done()
+        // res, err := service.call(r)
+    }(request)
+}
+wg.Wait()
+```
+
+可以通过 sync.WaitGroup 将原本顺序执行的代码在多个 Goroutine 中并发执行，加快程序处理的速度。
+
+![img.png](images/sync4.png)
+
+## 结构体
+
+sync.WaitGroup 结构体中只包含两个成员变量：
+
+```go
+type WaitGroup struct {
+	noCopy noCopy
+
+	// 64-bit value: high 32 bits are counter, low 32 bits are waiter count.
+	// 64-bit atomic operations require 64-bit alignment, but 32-bit
+	// compilers only guarantee that 64-bit fields are 32-bit aligned.
+	// For this reason on 32 bit architectures we need to check in state()
+	// if state1 is aligned or not, and dynamically "swap" the field order if
+	// needed.
+	state1 uint64
+	state2 uint32
+}
+```
+
+- noCopy — 保证 sync.WaitGroup 不会被开发者通过再赋值的方式拷贝
+- state1  / state2  — 存储着状态和信号量
+
+sync.noCopy 是一个特殊的私有结构体，tools/go/analysis/passes/copylock 包中的分析器会在编译期间检查被拷贝的变量中是否包含 sync.noCopy 或者实现了 Lock 和 Unlock 方法，如果包含该结构体或者实现了对应的方法就会报出以下错误：
+
+```shell
+(base) ➜  go-learning git:(main) go vet advance/sync/nocopy.go
+# command-line-arguments
+advance/sync/nocopy.go:10:12: assignment copies lock value to copywg: sync.WaitGroup contains sync.noCopy
+advance/sync/nocopy.go:11:14: call of fmt.Println copies lock value: sync.WaitGroup contains sync.noCopy
+advance/sync/nocopy.go:11:18: call of fmt.Println copies lock value: sync.WaitGroup contains sync.noCopy
+
+```
+
+这段代码会因为变量赋值或者调用函数时发生值拷贝导致分析器报错。
+
+除了 sync.noCopy 之外，sync.WaitGroup` 结构体中还包含一个总共占用 12 字节的state1 和 state2，这个数组会存储当前结构体的状态，在 64 位与 32 位的机器上表现也非常不同。
+
+![img.png](images/sync5.png)
+
+
+> 	// 64-bit value: high 32 bits are counter, low 32 bits are waiter count.	
+>	 // 64-bit atomic operations require 64-bit alignment, but 32-bit
+>	// compilers only guarantee that 64-bit fields are 32-bit aligned.
+>	// For this reason on 32 bit architectures we need to check in state()
+>	// if state1 is aligned or not, and dynamically "swap" the field order if
+>	// needed.
+>
+
+这段话的关键点在于，在做 64 位的原子操作的时候必须要保证 64 位（8 字节）对齐，如果没有对齐的就会有问题，但是 32 位的编译器并不能保证 64 位对齐所以这里用一个 8个 字节的 state1 和 4个字节 state2 字段来存储，然后根据是否 8 字节对齐选择不同的保存方式。
+
+
+这个操作巧妙在哪里呢？
+
+- 如果是 64 位的机器那肯定是 8 字节对齐了的，所以是上面第一种方式
+- 如果在 32 位的机器上
+  - 如果恰好 8 字节对齐了，那么也是第一种方式取前面的 8 字节数据
+  - 如果是没有对齐，但是 32 位 4 字节是对齐了的，所以我们只需要后移四个字节，那么就 8 字节对齐了，所以是第二种方式
+
+```go
+
+// state returns pointers to the state and sema fields stored within wg.state*.
+func (wg *WaitGroup) state() (statep *uint64, semap *uint32) {
+	// 判断是否8个字节对齐
+	if unsafe.Alignof(wg.state1) == 8 || uintptr(unsafe.Pointer(&wg.state1))%8 == 0 {
+		// state1 is 64-bit aligned: nothing to do.
+		return &wg.state1, &wg.state2
+	} else {
+		// state1 is 32-bit aligned but not 64-bit aligned: this means that
+		// (&state1)+4 is 64-bit aligned.
+		state := (*[3]uint32)(unsafe.Pointer(&wg.state1))
+		return (*uint64)(unsafe.Pointer(&state[1])), &state[0]
+	}
+}
+```
+
+## Add
+
+```go
+func (wg *WaitGroup) Add(delta int) {
+	// 先从 state 当中把数据和信号量取出来
+	statep, semap := wg.state()
+	if race.Enabled {
+		_ = *statep // trigger nil deref early
+		if delta < 0 {
+			// Synchronize decrements with Wait.
+			race.ReleaseMerge(unsafe.Pointer(wg))
+		}
+		race.Disable()
+		defer race.Enable()
+	}
+	
+	// 在 waiter 上加上 delta 值
+	state := atomic.AddUint64(statep, uint64(delta)<<32)
+	// 取出当前的 counter
+	v := int32(state >> 32)
+	// 取出当前的 waiter，正在等待 goroutine 数量
+	w := uint32(state)
+	if race.Enabled && delta > 0 && v == int32(delta) {
+		// The first increment must be synchronized with Wait.
+		// Need to model this as a read, because there can be
+		// several concurrent wg.counter transitions from 0.
+		race.Read(unsafe.Pointer(semap))
+	}
+	// counter 不能为负数
+	if v < 0 {
+		panic("sync: negative WaitGroup counter")
+	}
+	// 这里属于防御性编程
+    // w != 0 说明现在已经有 goroutine 在等待中，说明已经调用了 Wait() 方法
+    // 这时候 delta > 0 && v == int32(delta) 说明在调用了 Wait() 方法之后又想加入新的等待者
+    // 这种操作是不允许的
+	if w != 0 && delta > 0 && v == int32(delta) {
+		panic("sync: WaitGroup misuse: Add called concurrently with Wait")
+	}
+	// 如果当前没有人在等待就直接返回，或者 counter > 0
+	if v > 0 || w == 0 {
+		return
+	}
+	// This goroutine has set counter to 0 when waiters > 0.
+	// Now there can't be concurrent mutations of state:
+	// - Adds must not happen concurrently with Wait,
+	// - Wait does not increment waiters if it sees counter == 0.
+	// Still do a cheap sanity check to detect WaitGroup misuse.
+	// 这里也是防御 主要避免并发调用 add 和 wait
+	if *statep != state {
+		panic("sync: WaitGroup misuse: Add called concurrently with Wait")
+	}
+	// Reset waiters count to 0.
+	// 唤醒所有 waiter，看到这里就回答了上面的问题了
+	*statep = 0
+	for ; w != 0; w-- {
+		runtime_Semrelease(semap, false, 0)
+	}
+}
+
+```
+
+
+## Wait
+
+```go
+
+// Wait blocks until the WaitGroup counter is zero.
+func (wg *WaitGroup) Wait() {
+	// 先从 state 当中把数据和信号量的地址取出来
+	statep, semap := wg.state()
+	if race.Enabled {
+		_ = *statep // trigger nil deref early
+		race.Disable()
+	}
+	for {
+		// 获取 counter 和 waiter 的数据
+		state := atomic.LoadUint64(statep)
+		v := int32(state >> 32)
+		w := uint32(state)
+		if v == 0 {
+			// counter = 0 说明没有在等的，直接返回就行
+			// Counter is 0, no need to wait.
+			if race.Enabled {
+				race.Enable()
+				race.Acquire(unsafe.Pointer(wg))
+			}
+			// 说明没有在等的，直接返回就行
+			return
+		}
+		// Increment waiters count.
+		// waiter + 1，调用一次就多一个等待者，然后休眠当前 goroutine 等待被唤醒
+		if atomic.CompareAndSwapUint64(statep, state, state+1) {
+			if race.Enabled && w == 0 {
+				// Wait must be synchronized with the first Add.
+				// Need to model this is as a write to race with the read in Add.
+				// As a consequence, can do the write only for the first waiter,
+				// otherwise concurrent Waits will race with each other.
+				race.Write(unsafe.Pointer(semap))
+			}
+			// 休眠当前 goroutine 等待被唤醒， 调用Wait() 被阻塞
+			runtime_Semacquire(semap)
+			
+			if *statep != 0 {
+				panic("sync: WaitGroup is reused before previous Wait has returned")
+			}
+			if race.Enabled {
+				race.Enable()
+				race.Acquire(unsafe.Pointer(wg))
+			}
+			// 等待被唤醒后，直接返回， 
+			return
+		}
+	}
+}
+```
+## Done
+
+这个只是 add 的简单封装
+
+```go
+// Done decrements the WaitGroup counter by one.
+func (wg *WaitGroup) Done() {
+	wg.Add(-1)
+}
+
+```
+
+
+> 小结 #
+> 
+> 通过对 sync.WaitGroup 的分析和研究，我们能够得出以下结论：
+> - sync.WaitGroup 必须在 sync.WaitGroup.Wait 方法返回之后才能被重新使用；
+> - sync.WaitGroup.Done 只是对 sync.WaitGroup.Add 方法的简单封装，我们可以向 sync.WaitGroup.Add 方法传入任意负数（需要保证计数器非负）快速将计数器归零以唤醒等待的 Goroutine；
+> - 可以同时有多个 Goroutine 等待当前 sync.WaitGroup 计数器的归零，这些 Goroutine 会被同时唤醒；
+
+
+# ErrGroup
+
+# Semaphore
+
+# SingleFlight
+
+# Sync.Pool
 
 
 
@@ -725,3 +1018,6 @@ func (s *LFStack) Pop() int32 {
 * https://www.cs.utexas.edu/~bornholt/post/memory-models.html
 * https://pkg.go.dev/sync/atomic 
 * https://zhuanlan.zhihu.com/p/94811032
+* https://blog.betacat.io/post/golang-atomic-value-exploration/
+* https://draveness.me/golang/docs/part3-runtime/ch06-concurrency/golang-sync-primitives/
+* https://www.cnblogs.com/ricklz/p/14610213.html
