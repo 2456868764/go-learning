@@ -617,6 +617,10 @@ func procPin() int {
 }
 ```
 
+简化版的流程图:
+
+![img.png](images/sync2.png)
+
 #### Load实现
 
 ```go
@@ -641,6 +645,10 @@ func (v *Value) Load() (val any) {
 }
 
 ```
+
+读取相对就简单很多了，它有两个分支：
+- 如果当前的typ是 nil 或者^uintptr(0)，那就证明第一次写入还没有开始，或者还没完成，那就直接返回 nil （不对外暴露中间状态）。
+- 否则，根据当前看到的typ和data构造出一个新的interface{}返回出去。
 
 #### 实现一个“无锁”栈
 
