@@ -7,7 +7,11 @@ type SafeMap[K comparable, V any] struct {
 	mutex sync.RWMutex
 }
 
+// LoadOrStore 读写锁要 double check
+// goroutine1 设置： key1 => 1
+// goroutine2 设置： key1 => 2
 func (s *SafeMap[K, V]) LoadOrStore(key K, newValue V) (val V, loaded bool) {
+	// 先获取读锁， goroutine1 和  goroutine2 都获得读锁进入
 	s.mutex.RLock()
 	val, ok := s.m[key]
 	s.mutex.RUnlock()
@@ -15,9 +19,14 @@ func (s *SafeMap[K, V]) LoadOrStore(key K, newValue V) (val V, loaded bool) {
 		return val, true
 	}
 
+	// 假如 goroutine1 获得写锁，
+	// goroutine2 等待 goroutine1 释放锁
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	// 加锁 和 double check
+	// goroutine1 修改 key1 => 1 后， 释放锁
+	// goroutine2 进入后， 如果不 double check, 会把 key1 => 2, 而不是 goroutine1 设置 key1 == 1 的值
+	// 到写锁 要 double check一下
 	val, ok = s.m[key]
 	if ok {
 		return val, true

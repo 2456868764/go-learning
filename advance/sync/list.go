@@ -7,6 +7,8 @@ type List[T any] interface {
 	Set(index int, t T)
 	DeleteAt(index int) T
 	Append(t T)
+	Len() int
+	Cap() int
 }
 
 type ArrayList[T any] struct {
@@ -35,6 +37,14 @@ func (a *ArrayList[T]) DeleteAt(index int) T {
 
 func (a *ArrayList[T]) Append(t T) {
 	a.vals = append(a.vals, t)
+}
+
+func (a *ArrayList[T]) Len() int {
+	return len(a.vals)
+}
+
+func (a *ArrayList[T]) Cap() int {
+	return cap(a.vals)
 }
 
 func NewArrayList[T any](initCap int) *ArrayList[T] {
@@ -72,6 +82,18 @@ func (s *SafeWapperArrayList[T]) Append(t T) {
 	s.l.Append(t)
 }
 
+func (s *SafeWapperArrayList[T]) Len() int {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	return s.l.Len()
+}
+
+func (s *SafeWapperArrayList[T]) Cap() int {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	return s.l.Cap()
+}
+
 func NewSafeWapperArrayList[T any](initCap int) *SafeWapperArrayList[T] {
 	return &SafeWapperArrayList[T]{
 		l: NewArrayList[T](initCap),
@@ -107,6 +129,18 @@ func (c *ConcurentArrayList[T]) Append(t T) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.vals = append(c.vals, t)
+}
+
+func (c *ConcurentArrayList[T]) Len() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return len(c.vals)
+}
+
+func (c *ConcurentArrayList[T]) Cap() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return cap(c.vals)
 }
 
 func NewConcurrentArrayList[T any](initCap int) *ConcurentArrayList[T] {
