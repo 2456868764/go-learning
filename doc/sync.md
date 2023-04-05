@@ -226,61 +226,97 @@ Mutex 可以看做是锁，而 RWMutex 则是读写锁。 一般的用法是将 
 
 ## 代码实例
 
-实现一个线程安全map 
-
+实现一个线程安全SafeArrayList
 
 ```go
 
-type SafeMap[K comparable, V any] struct {
-	m     map[K]V
-	mutex sync.RWMutex
+type ArrayList[T any] struct {
+	vals []T
 }
 
-// LoadOrStore 读写锁要 double check
-// goroutine1 设置： key1 => 1
-// goroutine2 设置： key1 => 2
-func (s *SafeMap[K, V]) LoadOrStore(key K, newValue V) (val V, loaded bool) {
-	// 先获取读锁， goroutine1 和  goroutine2 都获得读锁进入
-	s.mutex.RLock()
-	val, ok := s.m[key]
-	s.mutex.RUnlock()
-	if ok {
-		return val, true
-	}
+func (a *ArrayList[T]) Get(index int) T {
+	return a.vals[index]
+}
 
-	// 假如 goroutine1 获得写锁，
-	// goroutine2 等待 goroutine1 释放锁
+func (a *ArrayList[T]) Set(index int, t T) {
+	if index >= len(a.vals) || index < 0 {
+		panic("index out of range")
+	}
+	a.vals[index] = t
+}
+
+func (a *ArrayList[T]) DeleteAt(index int) T {
+	if index >= len(a.vals) || index < 0 {
+		panic("index out of range")
+	}
+	res := a.vals[index]
+	a.vals = append(a.vals[:index], a.vals[index+1:]...)
+	return res
+}
+
+func (a *ArrayList[T]) Append(t T) {
+	a.vals = append(a.vals, t)
+}
+
+func (a *ArrayList[T]) Len() int {
+	return len(a.vals)
+}
+
+func (a *ArrayList[T]) Cap() int {
+	return cap(a.vals)
+}
+
+func NewArrayList[T any](initCap int) *ArrayList[T] {
+	return &ArrayList[T]{
+		vals: make([]T, 0, initCap),
+	}
+}
+
+type SafeWapperArrayList[T any] struct {
+	l     List[T]
+	mutex sync.Mutex
+}
+
+func (s *SafeWapperArrayList[T]) Get(index int) T {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	// 加锁 和 double check
-	// goroutine1 修改 key1 => 1 后， 释放锁
-	// goroutine2 进入后， 如果不 double check, 会把 key1 => 2, 而不是 goroutine1 设置 key1 == 1 的值
-	// 到写锁 要 double check一下
-	val, ok = s.m[key]
-	if ok {
-		return val, true
-	}
-	s.m[key] = newValue
-	return newValue, false
+	return s.l.Get(index)
 }
 
-func (s *SafeMap[K, V]) LockDoSomething() {
+func (s *SafeWapperArrayList[T]) Set(index int, t T) {
 	s.mutex.Lock()
-	// 检查
-	// Do something
-	s.mutex.Unlock()
-}
-
-func (s *SafeMap[K, V]) RWLockDoSomething() {
-	s.mutex.RLock()
-	// 第一次检查
-	// Do something
-	s.mutex.RUnlock()
-
-	s.mutex.Lock()
-	// 第二次检查 , Double Check
-	// Do something
 	defer s.mutex.Unlock()
+	s.l.Set(index, t)
+}
+
+func (s *SafeWapperArrayList[T]) DeleteAt(index int) T {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	return s.l.DeleteAt(index)
+}
+
+func (s *SafeWapperArrayList[T]) Append(t T) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	s.l.Append(t)
+}
+
+func (s *SafeWapperArrayList[T]) Len() int {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	return s.l.Len()
+}
+
+func (s *SafeWapperArrayList[T]) Cap() int {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	return s.l.Cap()
+}
+
+func NewSafeWapperArrayList[T any](initCap int) *SafeWapperArrayList[T] {
+	return &SafeWapperArrayList[T]{
+		l: NewArrayList[T](initCap),
+	}
 }
 ```
 
@@ -300,6 +336,8 @@ func (s *SafeMap[K, V]) RWLockDoSomething() {
   - runtime_SemacquireMutex：sema 加 1 并且挂 起 goroutine 
   - runtime_Semrelease：sema 减 1 并且唤醒 sema 上等待的一个 goroutine
 - 有两种模式： 正常模式和饥饿模式
+
+结构体: 
 
 ```go
 type Mutex struct {
@@ -530,7 +568,238 @@ func (m *Mutex) unlockSlow(new int32) {
 ![img.png](./images/sync12.png)
 
 
+## RWMutex
+
+读写锁相对于互斥锁来说粒度更细，使用读写锁可以并发读，但是不能并发读写，或者并发写写
+
+### 代码
+
+实现一个线程安全Map
+```go
+
+import "sync"
+
+type SafeMap[K comparable, V any] struct {
+	m     map[K]V
+	mutex sync.RWMutex
+}
+
+// LoadOrStore 读写锁要 double check
+// goroutine1 设置： key1 => 1
+// goroutine2 设置： key1 => 2
+func (s *SafeMap[K, V]) LoadOrStore(key K, newValue V) (val V, loaded bool) {
+	// 先获取读锁， goroutine1 和  goroutine2 都获得读锁进入
+	s.mutex.RLock()
+	val, ok := s.m[key]
+	s.mutex.RUnlock()
+	if ok {
+		return val, true
+	}
+
+	// 假如 goroutine1 获得写锁，
+	// goroutine2 等待 goroutine1 释放锁
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	// 加锁 和 double check
+	// goroutine1 修改 key1 => 1 后， 释放锁
+	// goroutine2 进入后， 如果不 double check, 会把 key1 => 2, 而不是 goroutine1 设置 key1 == 1 的值
+	// 到写锁 要 double check一下
+	val, ok = s.m[key]
+	if ok {
+		return val, true
+	}
+	s.m[key] = newValue
+	return newValue, false
+}
+
+func (s *SafeMap[K, V]) LockDoSomething() {
+	s.mutex.Lock()
+	// 检查
+	// Do something
+	s.mutex.Unlock()
+}
+
+func (s *SafeMap[K, V]) RWLockDoSomething() {
+	s.mutex.RLock()
+	// 第一次检查
+	// Do something
+	s.mutex.RUnlock()
+
+	s.mutex.Lock()
+	// 第二次检查 , Double Check
+	// Do something
+	defer s.mutex.Unlock()
+}
+```
+
+核心内容:
+
+- 适合于读多写少的场景 
+- 写多读少不如直接加写锁 
+- 可以考虑使用函数式写法，如延迟初始化 
+- Mutex 和 RWMutex 都是不可重入的 
+- 尽可能用 defer 来解锁，避免 panic
+- Double Check
+
+
+结构体:
+
+sync.RWMutex 中总共包含以下 5 个字段：
+
+```go
+type RWMutex struct {
+	w           Mutex
+	writerSem   uint32
+	readerSem   uint32
+	readerCount int32
+	readerWait  int32
+}
+```
+
+- w — 复用互斥锁提供的能力；
+- writerSem 和 readerSem — 分别用于写等待读和读等待写：
+- readerCount 存储了当前正在执行的读操作数量；
+- readerWait 表示当写操作被阻塞时等待的读操作个数；
+
+写锁：
+
+当资源的使用者想要获取写锁时，需要调用 sync.RWMutex.Lock 方法：
+
+```go
+func (rw *RWMutex) Lock() {
+	rw.w.Lock()
+	r := atomic.AddInt32(&rw.readerCount, -rwmutexMaxReaders) + rwmutexMaxReaders
+	if r != 0 && atomic.AddInt32(&rw.readerWait, r) != 0 {
+		runtime_SemacquireMutex(&rw.writerSem, false, 0)
+	}
+}
+```
+
+调用结构体持有的 sync.Mutex 结构体的 sync.Mutex.Lock 阻塞后续的写操作；
+- 因为互斥锁已经被获取，其他 Goroutine 在获取写锁时会进入自旋或者休眠；
+- 调用 sync/atomic.AddInt32 函数阻塞后续的读操作：
+- 如果仍然有其他 Goroutine 持有互斥锁的读锁，该 Goroutine 会调用 runtime.sync_runtime_SemacquireMutex 进入休眠状态等待所有读锁所有者执行结束后释放 writerSem 信号量将当前协程唤醒；
+
+写锁的释放会调用 sync.RWMutex.Unlock：
+
+```go
+func (rw *RWMutex) Unlock() {
+	r := atomic.AddInt32(&rw.readerCount, rwmutexMaxReaders)
+	if r >= rwmutexMaxReaders {
+		throw("sync: Unlock of unlocked RWMutex")
+	}
+	for i := 0; i < int(r); i++ {
+		runtime_Semrelease(&rw.readerSem, false, 0)
+	}
+	rw.w.Unlock()
+}
+
+```
+
+与加锁的过程正好相反，写锁的释放分以下几个执行：
+
+- 调用 sync/atomic.AddInt32 函数将 readerCount 变回正数，释放读锁；
+- 通过 for 循环循环唤醒释放所有因为获取读锁而陷入等待的 Goroutine：
+- 调用 sync.Mutex.Unlock 释放写锁；
+
+获取写锁时会先阻塞写锁的获取，后阻塞读锁的获取，这种策略能够保证读操作不会被连续的写操作『饿死』。
+
+读锁：
+
+读锁的加锁方法 sync.RWMutex.RLock 很简单，该方法会通过 sync/atomic.AddInt32 将 readerCount 加一：
+
+```go
+func (rw *RWMutex) RLock() {
+	if atomic.AddInt32(&rw.readerCount, 1) < 0 {
+		runtime_SemacquireMutex(&rw.readerSem, false, 0)
+	}
+}
+```
+
+- 如果该方法返回负数 — 其他 Goroutine 获得了写锁，当前 Goroutine 就会调用 runtime.sync_runtime_SemacquireMutex 陷入休眠等待锁的释放；
+- 如果该方法的结果为非负数 — 没有 Goroutine 获得写锁，当前方法会成功返回
+
+当 Goroutine 想要释放读锁时，会调用如下所示的 sync.RWMutex.RUnlock 方法：
+
+```go
+func (rw *RWMutex) RUnlock() {
+	if r := atomic.AddInt32(&rw.readerCount, -1); r < 0 {
+		rw.rUnlockSlow(r)
+	}
+}
+```
+该方法会先减少正在读资源的 readerCount 整数，根据 sync/atomic.AddInt32 的返回值不同会分别进行处理：
+
+- 如果返回值大于等于零 — 读锁直接解锁成功；
+- 如果返回值小于零 — 有一个正在执行的写操作，在这时会调用sync.RWMutex.rUnlockSlow 方法；
+
+```go
+func (rw *RWMutex) rUnlockSlow(r int32) {
+	if r+1 == 0 || r+1 == -rwmutexMaxReaders {
+		throw("sync: RUnlock of unlocked RWMutex")
+	}
+	if atomic.AddInt32(&rw.readerWait, -1) == 0 {
+		runtime_Semrelease(&rw.writerSem, false, 1)
+	}
+}
+```
+sync.RWMutex.rUnlockSlow 会减少获取锁的写操作等待的读操作数 readerWait 并在所有读操作都被释放之后触发写操作的信号量 writerSem，该信号量被触发时，调度器就会唤醒尝试获取写锁的 Goroutine。
+
+> 小结 #
+> 虽然读写互斥锁 sync.RWMutex 提供的功能比较复杂，但是因为它建立在 sync.Mutex 上，所以实现会简单很多。我们总结一下读锁和写锁的关系：
+
+> - 调用 sync.RWMutex.Lock 尝试获取写锁时；
+>  - 每次 sync.RWMutex.RUnlock 都会将 readerCount 其减一，当它归零时该 Goroutine 会获得写锁；
+  - 将 readerCount 减少 rwmutexMaxReaders 个数以阻塞后续的读操作；
+- 调用 sync.RWMutex.Unlock 释放写锁时，会先通知所有的读操作，然后才会释放持有的互斥锁；
+
+读写互斥锁在互斥锁之上提供了额外的更细粒度的控制，能够在读操作远远多于写操作时提升性能。
+
+
 # sync.Cond
+
+## 代码
+
+实现一个线程安全队列
+
+```go
+
+import (
+	"sync"
+)
+
+type Queue[T any] struct {
+	queue []T
+	cond  *sync.Cond
+}
+
+func (q *Queue[T]) Enqueue(item T) {
+	q.cond.L.Lock()
+	defer q.cond.L.Unlock()
+	q.queue = append(q.queue, item)
+	q.cond.Broadcast()
+}
+
+func (q *Queue[T]) Dequeue() T {
+	q.cond.L.Lock()
+	defer q.cond.L.Unlock()
+	if len(q.queue) == 0 {
+		q.cond.Wait()
+	}
+	item := q.queue[len(q.queue)-1]
+	q.queue = q.queue[:len(q.queue)-1]
+	return item
+}
+
+func NewQueue[T any](initCap int) *Queue[T] {
+	queue := &Queue[T]{
+		queue: make([]T, 0, initCap),
+		cond:  sync.NewCond(&sync.Mutex{}),
+	}
+	return queue
+}
+
+```
 
 
 # sync.Once
