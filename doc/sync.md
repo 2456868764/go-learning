@@ -173,6 +173,22 @@ func main() {
 > 软件(编译器)或硬件(CPU)系统可以根据其对代码的分析结果，一定程度上打乱代码的执行顺序，以达到其不可告人的目的(提高 CPU 利用率)
 
 
+### 多级缓存设计
+
+现代的处理器架构都是多级缓存的，cpu 有 L1，L2，L3 缓存，最后才是 DRAM，对于编译器生成的代码也是优先使用寄存器，其次才是主存。所以在并发场景下，必然是存在一致性问题的，一个执行体对变量的修改可能并不能立马对其他执行体可见。
+
+![img.png](images/sync18.png)
+
+
+### 编译优化和 cpu 乱序执行
+
+
+
+编译器会对代码进行优化，包括代码的调整，重排等操作。cpu 执行指令也是以乱序执行指令的，这些都是为了性能的考虑。
+
+
+### Go 内存模型
+
 Go 内存模型，就是要解决两个问题
 
 - 一个是要了解谁先谁后，有个专有名词叫 Happens Before
@@ -188,12 +204,435 @@ Go 内存模型，就是要解决两个问题
 ## Happens Before
 
 
+> Within a single goroutine, reads and writes must behave as if they executed in the order specified by the program. That is, compilers and processors may reorder the reads and writes executed within a single goroutine only when the reordering does not change the behavior within that goroutine as defined by the language specification. Because of this reordering, the execution order observed by one goroutine may differ from the order perceived by another. For example, if one goroutine executes a = 1; b = 2;, another might observe the updated value of b before the updated value of a.
+
+这段话就解释了上面我们示例当中为什么会出现 2 0  这种情况。
+
+这段话就是说我们在单个 goroutine 当中的编写的代码会总是按照我们编写代码的顺序来执行
+
+- 当然这个也是符合我们的习惯的
+- 当然这并不表示编译器在编译的时候不会对我们的程序进行指令重排
+- 而是说只会在不影响语言规范对 goroutine 的行为定义的时候，编译器和 CPU 才会对读取和写入的顺序进行重新排序。
+
+但是正是因为存在这种重排的情况，所以一个 goroutine 监测到的执行顺序和另外一个 goroutine 监测到的有可能不一样。就像我们最上面的这个例子一样，可能我们在 f 执行的顺序是先执行 a = 1 后执行 b = 2 但是在 g 中我们只看到了 b = 2 具体什么情况可能会导致这个呢？不要着急，我们后面还会说到
+
+### 编译器重排
+
+我们来看参考文章中的一个编译器重排例子
+
+```go
+X = 0
+for i in range(100):
+    X = 1
+    print X
+```
+
+在这段代码中，X = 1 在 for 循环内部被重复赋值了 100 次，这完全没有必要，于是聪明的编译器就会帮助我们优化成下面的样子
+
+```go
+X = 1
+for i in range(100):
+    print X
+```
+
+happens before 定义
+
+> To specify the requirements of reads and writes, we define happens before, a partial order on the execution of memory operations in a Go program. If event e1 happens before event e2, then we say that e2 happens after e1. Also, if e1 does not happen before e2 and does not happen after e2, then we say that e1 and e2 happen concurrently.
+
+这是 Happens Before 的定义，如果 e1 发生在 e2 之前，那么我们就说 e2 发生在 e1 之后，如果 e1 既不在 e2 前，也不在 e2 之后，那我们就说这俩是并发的
+
+> Within a single goroutine, the happens-before order is the order expressed by the program.
+>
+
+这就是我们前面提到的，在单个 goroutine 当中，事件发生的顺序，就是程序所表达的顺序
+
+> happen before 本质：
+> - 前面一个操作的结果对后续操作是可见的（可以理解成逻辑上的操作顺序是有先后的）。
+> - happens-before 本质是一种偏序关系，所以要满足传递性。我们说 A happens-before B ，也就是说 A 的结果对于 B 是可见的，简称 A <= B，或者 hb(A, B)。
+
+> A read r of a variable v is allowed to observe a write w to v if both of the following hold:
+>
+> 1. r does not happen before w.
+> 2. There is no other write w' to v that happens after w but before r.
+
+假设我们现在有一个变量 v，然后只要满足下面的两个条件，那么读取操作 r 就可以对这个变量 v 的写入操作 w 进行监测
+
+1. 读取操作 r 发生在写入操作 w 之后
+2. 并且在 w 之后，r 之前没有其他对 v 的写入操作 w'
+
+
+这对条件的要求比第一个条件更强，它需要确保没有其它写入操作与 w 或 r 并发。
+在单个 goroutine 当中这两个条件是等价的，因为单个 goroutine 中不存在并发，在多个 goroutine 中就必须使用同步语义来确保顺序，这样才能到保证能够监测到预期的写入
+
+**单个 goroutine 的情况：**
+
+我们可以发现在单个 goroutine 当中，读取操作 r 总是可以读取到上一次 w 写入的值的
+![img.png](images/sync13.png)
+
+**多个 goroutine 的情况:**
+
+但是存在多个 goroutine 的时候这个就不一定了，r0 读到的是 哪一次写入的值呢？如果看图的话像是 w4 的，但其实不一定，因为图中的两个 goroutine 所表达的时间维度可能是不一致的，所以 r0 可能读到的是 w0 w3 w4 甚至是 w5 的结果，当然按照我们前面说的理论，读到的不可能是 w1 的结果的
+
+![img.png](images/sync14.png)
+
+**添加一些同步点:**
+
+如下图所示我们通过 sync 包中的一些同步语义或者是 channel 为多个 goroutine 加入了 同步点，那么这个时候对于 r1 而言，他就是晚于 w4 并且早于 w1 和 w5 执行的，所以它读取到的是写入操作是可以确定的，是 w4
+
+![img.png](images/sync16.png)
+
+
+### golang happens-before 的规则
+
+Golang 在 5 个方面提供了 happens-before  的规则承诺。
+
+注意，后面我们说 A happens-before B，等价于 A <= B，等价于 A 先于 B，等价于 A 结果可见于 B，“先于”说的是可见性，并不是严格的物理时间顺序，注意下区别，后面不再解释。
+
+我们展开看下 Golang 具体是提供了那几条 happens-before 规则，按照场景和类型分类，具体的规则如下：
+
+
+#### 1.  Initialization
+
+官方描述：
+
+> If a package p imports package q, the completion of q's init functions happens before the start of any of p's.
+
+规则解释：
+
+import package  的时候，如果 package p 里面执行 import q ，那么逻辑顺序上 package q 的 init 函数执行先于 package p 后面执行任何其他代码。
+
+举个例子：
+
+```go
+// package p
+import "q"      // 1
+import "x"      // 2
+```
+
+执行（2）的时候，package q 的 init 函数执行结果对（2）可见，换句话说，q 的 init 函数先执行，import "x"  后执行。
+
+#### 2. Goroutine creation
+
+官方描述：
+
+> The go statement that starts a new goroutine happens before the goroutine's execution begins.
+>
+
+规则解释：
+
+该规则说的是 goroutine 创建的场景，创建函数本身先于 goroutine 内的第一行代码执行。
+
+举个例子：
+
+```go
+var a int
+
+func main() {
+ a = 1          // 1
+ go func() {   // 2
+  println(a)  // 3
+ }()
+}
+
+
+```
+
+按照这条 happens-before 规则：
+
+1. （2）的结果可见于（3），也就是 2 <= 3；
+2. （1）天然先于（2），有 1 <= 2
+
+happens-before 属于一种偏序规则，具有传递性，所以 1<=2<=3，所以 golang 程序能保证在 println(a) 的时候，一定是执行了 a=1 的指令的。再换句话说，主 goroutine 修改了 a 的值，这个结果在 协程里 println 的时候是可见的。
+
+
+#### 3. Goroutine destruction
+
+官方描述：
+
+> The exit of a goroutine is not guaranteed to happen before any event in the program.
+
+规则解释：
+
+该规则说的是 goroutine 销毁的场景，这条规则说的是，
+- goroutine 的 exit 事件并不保证先于所有的程序内的其他事件，
+- 或者说某个 goroutine exit 的结果并不保证对其他人可见。
+
+举个例子：
+
+```go
+var a string
+
+func hello() {
+ go func() { a = "hello" }()
+ print(a)
+}
+```
+
+换句话说，协程的销毁流程本身没有做任何 happens-before 承诺。上面的实例里面的 goroutine 的退出结果不可见于下面的任何一行代码。
+
+#### 4. Channel communiaction
+
+官方描述：
+
+> 1. A send on a channel happens before the corresponding receive from that channel completes.
+> 2. The closing of a channel happens before a receive that returns a zero value because the channel is closed.
+> 3. A receive from an unbuffered channel happens before the send on that channel completes.
+> 4. The kth receive on a channel with capacity C happens before the k+Cth send from that channel completes.
+
+规则解释：
+
+channel 涉及到的 happens-before 规则一共有 4 条，数量最多。从这个条数我们也能看出来，Golang 里面 channel 才是保证内存可见性，有序性，代码同步的一等选择，我们一条条解析下：
+
+##### 1.规则一解释：
+
+> A send on a channel happens before the corresponding receive from that channel completes.
+>
+
+channel 的元素写入（send） 可见于 对应的元素读取（receive）操作完成。注意关键字：“对应的元素，指的是同一个元素”，说的是同一个元素哈。换句话说，一个元素的 send 操作先于这个元素 receive 调用完成（结果返回）。
+
+举个例子：
+
+```go
+var c = make(chan int, 10)
+var a string
+
+func f() {
+ a = "hello, world"  // A
+ c <- 0                  // B
+}
+
+func main() {
+ go f()              // C
+ <-c                 // D
+ print(a)            // E
+}
+```
+
+这个例子能确保主协程打印出 “hello, world”字符串，也就是说 a="hello, world" 的赋值写可见于 print(a) 这条语句。我们由 happens-before 规则推导下：
+
+1. C <= A ：协程 create 时候的 happens-before 规则承诺；
+2. A <= B ：单协程上下文，指令顺序，天然保证；
+3. B <= D ：send 0 这个操作先于 0 出队完成（ <-c ） ，这条正是本规则；
+4. D <= E ：单协程上下文，指令顺序，天然保证；
+
+所以整个逻辑可见性执行的顺序是：C <= A <= B <= D <= E ，根据传递性，即 A <= E ，所以 print(a) 的时候，必定是 a 已经赋值之后。
+
+##### 2.规则二解释：
+
+> The closing of a channel happens before a receive that returns a zero value because the channel is closed.
+>
+
+channel 的关闭（还未完成）行为可见于 channel receive 返回（ 返回 0， 因为 channel closed 导致 ）；
+
+举个例子：
+
+以下这个例子和上面的非常相似，只需要把 c<- 0 替换成 close(c) ，推到的过程也是完全一致的。
+
+```go
+var c = make(chan int, 10)
+var a string
+
+func f() {
+    a = "hello, world"  // A
+    close(c)            // B
+}
+
+func main() {
+ go f()              // C
+ <-c                 // D
+ print(a)            // E
+}
+```
+
+整个逻辑可见性执行的顺序是：C <= A <= B <= D <= E ，根据传递性，A <= E ，所以 print(a) 的时候，必定是 a  已经赋值之后，所以也可正确打印“hello, world”。
+
+##### 3.规则三解释：
+
+> A receive from an unbuffered channel happens before the send on that channel completes.
+>
+
+第三条规则是针对 no buffer 的 channel 的，no buffer 的 channel 的 receive 操作可见于 send 元素操作完成。
+
+举个例子：
+
+```go
+var c = make(chan int)
+var a string
+
+func f() {
+    a = "hello, world"      // A
+    <-c                     // B
+}
+
+func main() {
+    go f()                  // C
+    c <- 0                  // D
+    print(a)                // E
+}
+```
+
+1. C <= A ：协程 create 时候的 happens-before 规则承诺；
+2. A <= B ：单协程上下文，指令顺序，天然保证；
+3. B <= D ：receive 操作可见于 0 入队完成（ c<-0 ），换句话说，执行 D 的时候 B 操作已经执行了 ，这条正是本规则；
+4. D <= E ：单协程上下文，指令顺序，天然保证；
+
+所以，整个可见性执行的顺序是：C <= A <= B <= D <= E ，根据传递性，A <= E ，所以 print(a) 的时候，必定是 a  已经赋值之后，所以也可正确打印“hello, world”。
+
+注意，这条规则只适用于 no buffer 的 channel，如果上面的例子换成有 buffer 的 channel var c = make(chan int, 1) ，那么该程序将不能保证 print(a) 的时候打印 “hello，world”。
+
+#### 4. 规则四解释：
+
+> The kth receive on a channel with capacity C happens before the k+Cth send from that channel completes.
+>
+
+第四条规则是通用规则，说的是，如果 channel 的 ringbuffer 长度是 C ，那么第 K 个元素的 receive 操作先于 第 K+C 个元素 的 send 操作完成；
+
+仔细思考下这条规则，当 C 等于 0 的时候，其实说的就是规则三，也就说 no buffer 的 channel 只是这条规则的一种特殊情况。
+
+举个例子：
+
+以上面的规则，先举一个简单形象的例子：
+
+```go
+c := make(chan int, 3)
+c <- 1 
+c <- 2
+c <- 3
+c <- 4  // A
+go func (){
+    <-c     // B     
+}()
+```
+
+B 操作结果可见于 A（或者说，逻辑上 B 先于 A 执行），那么如果时间上，先到了 A 这一行怎么办？就会等待，等待 B 执行完成，B 返回之后，A 才会唤醒且 send 操作完成。只有这样，才保证了本条 happens-before 规则的语义不变，保证 B 先于 A 执行。Golang 在 chan 的实现里保证了这一点。
+
+通俗的来讲，对于这种 buffer channel，一个坑只能蹲一个人，第 K+C 个元素一定要等第 K 个元素腾位置，chan 内部就是一个 ringbuffer，本身就是一个环，所以第 K+C 个元素和第 K 个元素要的是指向同一个位置，必须是 [ The kth receive ] happens-before [ the k+Cth send from that channel completes. ]
+
+那我们再仔细思考下，这就类似一种计数的信号量控制。
+
+- ringbuffer 当前里面的元素相当于当前的资源消耗；
+- channel 的 ringbuffer 容量大小相当于最大的资源数；
+- send 一个元素相当于 acquire 一个信号量；
+- receive 相当于 release 一个信号量（腾出一个坑位）；
+- 由于 Golang 承诺的这条 happens-before 规则，指明了第 K 个元素和第 K + C （同坑位）的同步行为；
+
+这个跟我们用来限制并发数的场景是一样的，再看一个官方的例子：
+
+```go
+
+var limit = make(chan int, 3)
+
+func main() {
+	
+ for _, w := range work {
+  go func(w func()) {
+   limit <- 1
+   w()
+   <-limit
+  }(w)
+ }
+ 
+ select{}
+}
+```
+
+这个不就是一个限制 3 并发的用法嘛。
+
+
+#### 5.Lock
+
+官方描述：
+
+> 1. For any sync.Mutex or sync.RWMutex variable l and n < m, call n of l.Unlock() happens before call m of l.Lock() returns.
+> 2. For any call to l.RLock on a sync.RWMutex variable l, there is an n such that the l.RLock happens (returns) after call n to l.Unlock and the matching l.RUnlock happens before call n+1 to l.Lock.
+
+规则解释：
+
+锁相关的 happens-before 规则有两条。
+
+规则一解释：
+
+> For any sync.Mutex or sync.RWMutex variable l and n < m, call n of l.Unlock() happens before call m of l.Lock() returns.
+> 
+
+该规则针对任意 sync.Mutex 和 sync.RWMutex 的锁变量 L，第 n 次调用 L.Unlock()  逻辑先于（结果可见于）第 m 次调用 L.Lock() 操作。
+
+举个例子：
+
+这个例子推导：
+
+1. A <= B （单协程上下文指令顺序，天然保证）
+2. B <= E （协程创建场景的 happens-before 承诺，见上）
+3. E <= F
+4. F <= C （这个就是本规则了，承诺了第 1 次的解锁可见于第二次的加锁，golang 为了守住这个承诺，所以必须让 C 行等待着 F 执行完）
+5. C <= D
+
+
+所以整体的逻辑顺序链条：A <= B <= E <= F <= C <= D，推导出 E <= D，所以 print(a)  的时候 a 是一定赋值了“hello, world”的，该程序允许符合预期。
+
+这条规则规定的是加锁和解锁的一个逻辑关系，讲的是谁等谁的关系。该例子讲的就是 golang 为了遵守这个承诺，保证 C 等 F。
+
+规则二解释：
+
+> For any call to l.RLock on a sync.RWMutex variable l, there is an n such that the l.RLock happens (returns) after call n to l.Unlock and the matching l.RUnlock happens before call n+1 to l.Lock.
+>
+
+这个第二条规则是针对 sync.RWMutex 类型的锁变量 L，说的是 L.Unlock( ) 可见于 L.Rlock( ) ，第 n 次的 L.Runlock( ) 先于 第 n+1 次的 L.Lock() 。
+
+我换一个角度说，两个方面：
+
+1. L.Unlock 会唤醒其他等待的读锁（L.Rlock( ) ）请求；
+2. L.RUnlock 会唤醒其他 L.Lock( ) 请求
+
+#### 5. Once
+
+官方描述：
+
+> A single call of f() from once.Do(f) happens (returns) before any call of once.Do(f) returns.
+>
+
+规则解释：
+
+该规则说的是 f( ) 函数执行先于 once.Do(f) 的返回。换句话说，f( ) 必定先执行完，once.Do(f)  函数调用才能返回。
+
+```go
+var a string
+var once sync.Once
+
+func setup() {
+    a = "hello, world"  // A
+}
+
+func doprint() {
+    once.Do(setup)      // B
+    print(a)            // C
+}
+
+func twoprint() {
+    go doprint()        // D
+    go doprint()        // E
+}
+```
+
+该例子保证了 setup( ) 一定先执行完 once.Do(setup) 调用才会返回，所以等到 print(a) 的时候，a 肯定是赋值了的。所以以上程序会打印两次“hello, world”。
 
 # sync 包基本原语
 
 Go 语言在 sync 包中提供了用于同步的一些基本原语，包括常见的 sync.Mutex、sync.RWMutex、sync.WaitGroup、sync.Once 和 sync.Cond：
 
 ![img.png](images/sync3.png)
+
+机器码
+
+> Reads and writes of values larger than a single machine word behave as multiple machine-word-sized operations in an unspecified order.
+>
+
+对大于单个机器码的值进行读取和写入，其表现如同以不确定的顺序对多个机器字大小的值进行操作。要理解这个我们首先要理解什么是机器码。
+
+我们现在常见的还有 32 位系统和 64 位的系统，cpu 在执行一条指令的时候对于单个机器字长的的数据的写入可以保证是原子的，对于 32 位的就是 4 个字节，对于 64 位的就是 8 个字节，对于在 32 位情况下去写入一个 8 字节的数据时就需要执行两次写入操作，这两次操作之间就没有原子性，那就可能出现先写入后半部分的数据再写入前半部分，或者是写入了一半数据然后写入失败的情况。
+也就是说虽然有时候我们看着仅仅只做了一次写入但是还是会有并发问题，因为它本身不是原子的
+
+
 
 
 
@@ -632,7 +1071,7 @@ func (s *SafeMap[K, V]) RWLockDoSomething() {
 }
 ```
 
-核心内容:
+### 核心内容:
 
 - 适合于读多写少的场景 
 - 写多读少不如直接加写锁 
@@ -642,7 +1081,7 @@ func (s *SafeMap[K, V]) RWLockDoSomething() {
 - Double Check
 
 
-结构体:
+### 结构体:
 
 sync.RWMutex 中总共包含以下 5 个字段：
 
@@ -661,7 +1100,7 @@ type RWMutex struct {
 - readerCount 存储了当前正在执行的读操作数量；
 - readerWait 表示当写操作被阻塞时等待的读操作个数；
 
-写锁：
+### 写锁：
 
 当资源的使用者想要获取写锁时，需要调用 sync.RWMutex.Lock 方法：
 
@@ -704,7 +1143,7 @@ func (rw *RWMutex) Unlock() {
 
 获取写锁时会先阻塞写锁的获取，后阻塞读锁的获取，这种策略能够保证读操作不会被连续的写操作『饿死』。
 
-读锁：
+### 读锁：
 
 读锁的加锁方法 sync.RWMutex.RLock 很简单，该方法会通过 sync/atomic.AddInt32 将 readerCount 加一：
 
@@ -1646,3 +2085,4 @@ func (wg *WaitGroup) Done() {
 * https://blog.betacat.io/post/golang-atomic-value-exploration/
 * https://draveness.me/golang/docs/part3-runtime/ch06-concurrency/golang-sync-primitives/
 * https://www.cnblogs.com/ricklz/p/14610213.html
+* https://mp.weixin.qq.com/s/vvKNAarcc3kz1hz9o4B1ZQ
