@@ -1197,6 +1197,8 @@ sync.RWMutex.rUnlockSlow 会减少获取锁的写操作等待的读操作数 rea
 
 # sync.Cond
 
+Go 语言标准库中还包含条件变量 sync.Cond，它可以让一组的 Goroutine 都在满足特定条件时被唤醒。每一个 sync.Cond 结构体在初始化时都需要传入一个互斥锁，可以通过下面的例子了解它的使用方法：
+
 ## 代码
 
 实现一个线程安全队列
@@ -1240,6 +1242,153 @@ func NewQueue[T any](initCap int) *Queue[T] {
 
 ```
 
+
+![img_1.png](images/sync15.png)
+
+## 结构体 
+
+sync.Cond 的结构体中包含以下 4 个字段：
+
+```go
+type Cond struct {
+	noCopy  noCopy
+	L       Locker
+	notify  notifyList
+	checker copyChecker
+}
+```
+
+- noCopy — 用于保证结构体不会在编译期间拷贝；
+- copyChecker — 用于禁止运行期间发生的拷贝；
+- L — 用于保护内部的 notify 字段，Locker 接口类型的变量；
+- notify — 一个 Goroutine 的链表，它是实现同步机制的核心结构；
+
+```go
+type notifyList struct {
+	wait uint32
+	notify uint32
+
+	lock mutex
+	head *sudog
+	tail *sudog
+}
+```
+
+在 sync.notifyList 结构体中，head 和 tail 分别指向的链表的头和尾，wait 和 notify 分别表示当前正在等待的和已经通知到的 Goroutine 的索引。
+
+## sync.Cond.Wait 接口 
+
+sync.Cond 对外暴露的 sync.Cond.Wait 方法会将当前 Goroutine 陷入休眠状态，它的执行过程分成以下两个步骤：
+
+- 调用 runtime.notifyListAdd 将等待计数器加一 同时 释放锁；
+- 调用 runtime.notifyListWait 等待其他 Goroutine 的唤醒，同时加锁：
+
+```go
+func (c *Cond) Wait() {
+	c.checker.check()
+	t := runtime_notifyListAdd(&c.notify) // runtime.notifyListAdd 的链接名
+	// 释放锁
+	c.L.Unlock()
+	// 把自己加入到等待队列中，等待其他 goroutine 唤醒
+	runtime_notifyListWait(&c.notify, t) // runtime.notifyListWait 的链接名
+	// 唤醒后再加锁 
+	c.L.Lock()
+}
+
+func notifyListAdd(l *notifyList) uint32 {
+	return atomic.Xadd(&l.wait, 1) - 1
+}
+```
+runtime.notifyListWait 会获取当前 Goroutine 并将它追加到 Goroutine 通知链表的最末端：
+
+```go
+func notifyListWait(l *notifyList, t uint32) {
+	s := acquireSudog()
+	s.g = getg()
+	s.ticket = t
+	if l.tail == nil {
+		l.head = s
+	} else {
+		l.tail.next = s
+	}
+	l.tail = s
+	goparkunlock(&l.lock, waitReasonSyncCondWait, traceEvGoBlockCond, 3)
+	releaseSudog(s)
+}
+```
+![img_1.png](images/sync19.png)
+
+sync.Cond.Signal 和 sync.Cond.Broadcast 就是用来唤醒陷入休眠的 Goroutine 的方法，它们的实现有一些细微的差别：
+
+- sync.Cond.Signal 方法会唤醒队列最前面的 Goroutine；
+- sync.Cond.Broadcast 方法会唤醒队列中全部的 Goroutine；
+
+```go
+func (c *Cond) Signal() {
+	c.checker.check()
+	runtime_notifyListNotifyOne(&c.notify)
+}
+
+func (c *Cond) Broadcast() {
+	c.checker.check()
+	runtime_notifyListNotifyAll(&c.notify)
+}
+```
+
+runtime.notifyListNotifyOne 只会从 sync.notifyList 链表中找到满足 sudog.ticket == l.notify 条件的 Goroutine 并通过 runtime.readyWithTime 唤醒：
+
+```go
+func notifyListNotifyOne(l *notifyList) {
+	t := l.notify
+	atomic.Store(&l.notify, t+1)
+
+	for p, s := (*sudog)(nil), l.head; s != nil; p, s = s, s.next {
+		if s.ticket == t {
+			n := s.next
+			if p != nil {
+				p.next = n
+			} else {
+				l.head = n
+			}
+			if n == nil {
+				l.tail = p
+			}
+			s.next = nil
+			readyWithTime(s, 4)
+			return
+		}
+	}
+}
+```
+
+runtime.notifyListNotifyAll 会依次通过 runtime.readyWithTime 唤醒链表中 Goroutine：
+
+```go
+func notifyListNotifyAll(l *notifyList) {
+	s := l.head
+	l.head = nil
+	l.tail = nil
+
+	atomic.Store(&l.notify, atomic.Load(&l.wait))
+
+	for s != nil {
+		next := s.next
+		s.next = nil
+		readyWithTime(s, 4)
+		s = next
+	}
+}
+```
+
+Goroutine 的唤醒顺序也是按照加入队列的先后顺序，先加入的会先被唤醒，而后加入的可能 Goroutine 需要等待调度器的调度。
+
+在一般情况下，我们都会先调用 sync.Cond.Wait 陷入休眠等待满足期望条件，当满足唤醒条件时，就可以选择使用 sync.Cond.Signal 或者 sync.Cond.Broadcast 唤醒一个或者全部的 Goroutine。
+
+> 小结 #
+> - sync.Cond 不是一个常用的同步机制，但是在条件长时间无法满足时，与使用 for {} 进行忙碌等待相比，sync.Cond 能够让出处理器的使用权，提高 CPU 的利用率。使用时我们也需要注意以下问题：
+> - sync.Cond.Wait 在调用之前一定要使用获取互斥锁，否则会触发程序崩溃；
+> - sync.Cond.Signal 唤醒的 Goroutine 都是队列最前面、等待最久的 Goroutine；
+> - sync.Cond.Broadcast 会按照一定顺序广播通知等待的全部 Goroutine；
 
 # sync.Once
 
@@ -2065,6 +2214,94 @@ func (wg *WaitGroup) Done() {
 
 
 # ErrGroup
+
+在一个 goroutine 需要等待多个 goroutine 完成和多个 goroutine 等待一个 goroutine 干活时都可以用 WaitGroup 解决问题
+
+但是仍然存在一些问题，例如如果需要返回错误，或者只要一个 goroutine 出错我们就不再等其他 goroutine 了，减少资源浪费，这些 WaitGroup 都不能很好的解决，这时候就 errgroup 出场了。
+
+errgroup.Group 为我们在一组 Goroutine 中提供了同步、错误传播以及上下文取消的功能，可以使用如下所示的方式并行获取网页的数据：
+
+## 函数签名
+
+```go
+type Group
+func WithContext(ctx context.Context) (*Group, context.Context)
+func (g *Group) Go(f func() error)
+func (g *Group) Wait() error
+```
+
+- 通过 WithContext  可以创建一个带取消的 Group
+- Go  方法传入一个 func() error  内部会启动一个 goroutine 去处理
+- Wait  类似 WaitGroup 的 Wait 方法，等待所有的 goroutine 结束后退出，返回的错误是一个出错的 err
+
+## Group
+
+```go
+type Group struct {
+    // context 的 cancel 方法
+	cancel func()
+
+    // 复用 WaitGroup
+	wg sync.WaitGroup
+
+	// 用来保证只会接受一次错误
+	errOnce sync.Once
+    // 保存第一个返回的错误
+	err     error
+}
+```
+
+## WithContext
+```go
+func WithContext(ctx context.Context) (*Group, context.Context) {
+	ctx, cancel := context.WithCancel(ctx)
+	return &Group{cancel: cancel}, ctx
+}
+```
+
+WithContext  就是使用 WithCancel  创建一个可以取消的 context 将 cancel 赋值给 Group 保存起来，然后再将 context 返回回去
+
+> 注意:
+> 这里有一个坑，在后面的代码中不要把这个 ctx 当做父 context 又传给下游，
+> 因为 errgroup 取消了，这个 context 就没用了，会导致下游复用的时候出错
+
+## Go
+```go
+func (g *Group) Go(f func() error) {
+	g.wg.Add(1)
+
+	go func() {
+		defer g.wg.Done()
+
+		if err := f(); err != nil {
+			g.errOnce.Do(func() {
+				g.err = err
+				if g.cancel != nil {
+					g.cancel()
+				}
+			})
+		}
+	}()
+}
+```
+
+Go  方法其实就类似于 go 关键字，会启动一个 goroutine，然后利用 waitgroup  来控制是否结束，如果有一个非 nil  的 error 出现就会保存起来并且如果有 cancel  就会调用 cancel  取消掉，使 ctx  返回
+
+## Wait
+```go
+func (g *Group) Wait() error {
+	g.wg.Wait()
+	if g.cancel != nil {
+		g.cancel()
+	}
+	return g.err
+}
+
+```
+
+Wait  方法其实就是调用 WaitGroup  等待，如果有 cancel  就调用一下
+
+
 
 # Semaphore
 

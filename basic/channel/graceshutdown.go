@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/2456868764/go-learning/basic/channel/signals"
+	"github.com/2456868764/go-learning/pkg/signals"
 	"time"
 )
 
