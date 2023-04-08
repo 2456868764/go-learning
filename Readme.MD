@@ -26,7 +26,8 @@
     - [x] [channel](./doc/channel.md)
     - [ ] net
     - [ ] sql
-    - [ ] [sync和并发编程](./doc/sync.md)
+    - [x] [sync和并发编程](./doc/sync.md)
+    - [ ] [优雅退出](./doc/graceful_shutdown.md)
     - [x] [unsafe](./doc/unsafe.md)
     - [x] [http](./doc/http.md)
     - [ ] log
