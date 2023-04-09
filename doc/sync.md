@@ -2613,9 +2613,71 @@ func (g *Group) Forget(key string) {
 }
 ```
 
+有哪些注意事项（避坑指南）？
+单飞虽好但也不要滥用哦，还是存在一些坑的
+
+1. 一个阻塞，全员等待
+
+使用 singleflight 我们比较常见的是直接使用 Do 方法，但是这个极端情况下会导致整个程序 hang 住，如果我们的代码出点问题，有一个调用 hang 住了，那么会导致所有的请求都 hang 住
+
+还是之前的例子，我们加一个 select 模拟阻塞 :
+
+```go
+func singleflightGetArticle(sg *singleflight.Group, id int) (string, error) {
+	v, err, _ := sg.Do(fmt.Sprintf("%d", id), func() (interface{}, error) {
+		// 模拟出现问题，hang 住
+		select {}
+		return getArticle(id)
+	})
+
+	return v.(string), err
+}
+```
+
+```shell
+goroutine 950 [semacquire]:
+sync.runtime_Semacquire(0x1400046cf38?)
+
+```
+
+这时候我们可以使用 DoChan 结合 select 做超时控制:
+
+```go
+func singleflightGetArticle(ctx context.Context, sg *singleflight.Group, id int) (string, error) {
+	result := sg.DoChan(fmt.Sprintf("%d", id), func() (interface{}, error) {
+		// 模拟出现问题，hang 住
+		select {}
+		return getArticle(id)
+	})
+
+	select {
+	case r := <-result:
+		return r.Val.(string), r.Err
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+```
+
+2. 一个出错，全部出错
+
+一旦调用的函数返回了错误，所有在等待的 Goroutine 也都会接收到同样的错误；
+
+这个本身不是什么问题，因为 singleflight 就是这么设计的，但是实际使用的时候 如果我们一次调用要 1s，我们的数据库请求或者是 下游服务可以支撑 10rps 的请求的时候这会导致我们的错误阈提高，因为实际上我们可以一秒内尝试 10 次，但是用了 singleflight 之后只能尝试一次，只要出错这段时间内的所有请求都会受影响
+
+这种情况我们可以启动一个 Goroutine 定时 forget 一下，相当于将 rps 从 1rps 提高到了 10rps.
+
+Forget 可以通知 Group 在持有的映射表中删除某个键，接下来对该键的调用就不会等待前面的函数返回了；
+
+```go
+go func() {
+       time.Sleep(100 * time.Millisecond)
+       // logging
+       g.Forget(key)
+   }()
+```
 
 # Sync.Pool
-
 
 
 # Reference
