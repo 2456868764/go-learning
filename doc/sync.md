@@ -2302,10 +2302,317 @@ func (g *Group) Wait() error {
 Wait  方法其实就是调用 WaitGroup  等待，如果有 cancel  就调用一下
 
 
-
-# Semaphore
-
 # SingleFlight
+
+golang/sync/singleflight.Group 是 Go 语言扩展包中提供了另一种同步原语，它能够在一个服务中抑制对下游的多次重复请求。
+
+一个比较常见的使用场景是：在使用 Redis 对数据库中的数据进行缓存，发生缓存击穿时，大量的流量都会打到数据库上进而影响服务的尾延时。
+
+Redis 缓存击穿问题: 
+
+
+![Redis 缓存击穿问题](images/sync22.png)
+
+golang/sync/singleflight.Group 能有效地解决这个问题，它能够限制对同一个键值对的多次重复请求，减少对下游的瞬时流量。
+
+缓解缓存击穿问题:
+
+![img_1.png](images/sync23.png)
+
+## 代码
+
+```go
+
+import (
+	"fmt"
+	"golang.org/x/sync/singleflight"
+	"sync"
+	"sync/atomic"
+	"time"
+)
+
+var count int32
+
+func main() {
+
+	time.AfterFunc(1*time.Second, func() {
+		atomic.AddInt32(&count, -count)
+	})
+
+	var (
+		wg  sync.WaitGroup
+		now = time.Now()
+		n   = 1000
+		sg  = &singleflight.Group{}
+	)
+
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			res, _ := singleflightGetArticle(sg, 1)
+			//res, _ := getArticle(1)
+			if res != "article: 1" {
+				panic("err")
+			}
+			wg.Done()
+		}()
+	}
+
+	wg.Wait()
+	fmt.Printf("同时发起 %d 次请求，耗时: %s", n, time.Since(now))
+}
+
+func getArticle(id int) (article string, err error) {
+	// 假设这里会对数据库进行调用, 模拟不同并发下耗时不同
+	fmt.Printf("发起获取 article: %d 请求\n", id)
+	atomic.AddInt32(&count, 1)
+	time.Sleep(time.Duration(count) * time.Millisecond)
+	fmt.Printf("结束获取 article: %d 请求\n", id)
+	return fmt.Sprintf("article: %d", id), nil
+}
+
+func singleflightGetArticle(sg *singleflight.Group, id int) (string, error) {
+	v, err, _ := sg.Do(fmt.Sprintf("%d", id), func() (interface{}, error) {
+		return getArticle(id)
+	})
+	return v.(string), err
+}
+```
+
+输出结果： 1000个 goroutine 真正获取数据 只有一个 goroutine 发起请求
+
+```shell
+发起获取 article: 1 请求
+结束获取 article: 1 请求
+同时发起 1000 次请求，耗时: 1.405416ms
+
+```
+
+
+
+## 函数
+
+主要是一个 Group  结构体，三个方法，具体信息看下方注释:
+
+```go
+
+type Group
+    // Do 执行函数, 对同一个 key 多次调用的时候，在第一次调用没有执行完的时候
+	// 只会执行一次 fn 其他的调用会阻塞住等待这次调用返回
+	// v, err 是传入的 fn 的返回值
+	// shared 表示是否真正执行了 fn 返回的结果，还是返回的共享的结果
+    func (g *Group) Do(key string, fn func() (interface{}, error)) (v interface{}, err error, shared bool)
+
+	// DoChan 和 Do 类似，只是 DoChan 返回一个 channel，也就是同步与异步的区别
+	func (g *Group) DoChan(key string, fn func() (interface{}, error)) <-chan Result
+
+    // Forget 用于通知 Group 删除某个 key 这样后面继续这个 key 的调用的时候就不会在阻塞等待了
+	func (g *Group) Forget(key string)
+
+```
+
+Group 结构体：
+
+- 一个互斥锁
+- 一个 map 组成，可以看到注释 map 是懒加载的，所以 Group 只要声明就可以使用，不用进行额外的初始化零值就可以直接使用。call 保存了当前调用对应的信息，map 的键就是我们调用 Do  方法传入的 key
+
+```go
+type call struct {
+	wg sync.WaitGroup
+
+	// 函数的返回值，在 wg 返回前只会写入一次
+	val interface{}
+	err error
+
+	// 使用调用了 Forgot 方法
+	forgotten bool
+
+    // 统计调用次数以及返回的 channel
+	dups  int
+	chans []chan<- Result
+}
+```
+
+Result： 返回 fn 执行结果保持 
+
+```go
+type Result struct {
+	// 返回结果
+	Val    interface{}
+	// 返回错误
+	Err    error
+	// 暂时没有用
+	Shared bool
+}
+
+```
+
+## Do
+
+```go
+func (g *Group) Do(key string, fn func() (interface{}, error)) (v interface{}, err error, shared bool) {
+	g.mu.Lock()
+
+    // 前面提到的懒加载
+    if g.m == nil {
+		g.m = make(map[string]*call)
+	}
+
+    // 会先去看 key 是否已经存在
+	if c, ok := g.m[key]; ok {
+       	// 如果存在就会解锁
+		c.dups++
+		g.mu.Unlock()
+
+        // 然后等待 WaitGroup 执行完毕，只要一执行完，所有的 wait 都会被唤醒
+		c.wg.Wait()
+
+        // 这里区分 panic 错误和 runtime 的错误，避免出现死锁，后面可以看到为什么这么做
+		if e, ok := c.err.(*panicError); ok {
+			panic(e)
+		} else if c.err == errGoexit {
+			runtime.Goexit()
+		}
+		return c.val, c.err, true
+	}
+
+    // 如果我们没有找到这个 key 就 new call
+	c := new(call)
+
+    // 然后调用 waitgroup 这里只有第一次调用会 add 1，其他的都会调用 wait 阻塞掉
+    // 所以这要这次调用返回，所有阻塞的调用都会被唤醒
+	c.wg.Add(1)
+	g.m[key] = c
+	g.mu.Unlock()
+
+    // 然后我们调用 doCall 去执行
+	g.doCall(c, key, fn)
+	return c.val, c.err, c.dups > 0
+}
+```
+
+## doCall
+
+这个方法的实现有点意思，使用了两个 defer 巧妙的将 runtime 的错误和我们传入 function 的 panic 区别开来避免了由于传入的 function panic 导致的死锁
+
+```go
+func (g *Group) doCall(c *call, key string, fn func() (interface{}, error)) {
+	normalReturn := false
+	recovered := false
+
+    // 第一个 defer 检查 runtime 错误
+	defer func() {
+        ....
+	}()
+
+    // 使用一个匿名函数来执行
+	func() {
+		defer func() {
+			if !normalReturn {
+                // 如果 panic 了我们就 recover 掉，然后 new 一个 panic 的错误
+                // 后面在上层重新 panic
+				if r := recover(); r != nil {
+					c.err = newPanicError(r)
+				}
+			}
+		}()
+
+		c.val, c.err = fn()
+
+        // 如果 fn 没有 panic 就会执行到这一步，如果 panic 了就不会执行到这一步
+        // 所以可以通过这个变量来判断是否 panic 了
+		normalReturn = true
+	}()
+
+    // 如果 normalReturn 为 false 就表示，我们的 fn panic 了
+    // 如果执行到了这一步，也说明我们的 fn  recover 住了，不是直接 runtime exit
+	if !normalReturn {
+		recovered = true
+	}
+}
+```
+
+再来看看第一个 defer 中的代码:
+
+
+```go
+defer func() {
+	// 如果既没有正常执行完毕，又没有 recover 那就说明需要直接退出了
+	if !normalReturn && !recovered {
+		c.err = errGoexit
+	}
+
+	c.wg.Done()
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+       // 如果已经 forgot 过了，就不要重复删除这个 key 了
+	if !c.forgotten {
+		delete(g.m, key)
+	}
+
+	if e, ok := c.err.(*panicError); ok {
+		// 如果返回的是 panic 错误，为了避免 channel 死锁，我们需要确保这个 panic 无法被恢复
+		if len(c.chans) > 0 {
+			go panic(e)
+			select {} // Keep this goroutine around so that it will appear in the crash dump.
+		} else {
+			panic(e)
+		}
+	} else if c.err == errGoexit {
+		// 已经准备退出了，也就不用做其他操作了
+	} else {
+		// 正常情况下向 channel 写入数据
+		for _, ch := range c.chans {
+			ch <- Result{c.val, c.err, c.dups > 0}
+		}
+	}
+}()
+```
+
+## DoChan
+
+Do chan 和 Do 类似，其实就是一个是同步等待，一个是异步返回，主要实现上就是，如果调用 DoChan 会给 call.chans 添加一个 channel 这样等第一次调用执行完毕之后就会循环向这些 channel 写入数据
+
+```go
+func (g *Group) DoChan(key string, fn func() (interface{}, error)) <-chan Result {
+	ch := make(chan Result, 1)
+	g.mu.Lock()
+	if g.m == nil {
+		g.m = make(map[string]*call)
+	}
+	if c, ok := g.m[key]; ok {
+		c.dups++
+		c.chans = append(c.chans, ch)
+		g.mu.Unlock()
+		return ch
+	}
+	c := &call{chans: []chan<- Result{ch}}
+	c.wg.Add(1)
+	g.m[key] = c
+	g.mu.Unlock()
+
+	go g.doCall(c, key, fn)
+
+	return ch
+}
+```
+
+## Forget
+
+forget 用于手动释放某个 key 下次调用就不会阻塞等待了
+
+```go
+func (g *Group) Forget(key string) {
+	g.mu.Lock()
+	if c, ok := g.m[key]; ok {
+		c.forgotten = true
+	}
+	delete(g.m, key)
+	g.mu.Unlock()
+}
+```
+
 
 # Sync.Pool
 
