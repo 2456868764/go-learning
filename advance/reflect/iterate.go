@@ -7,7 +7,7 @@ import (
 
 func IterateList(object any) ([]any, error) {
 	val := reflect.ValueOf(object)
-	typ := reflect.ValueOf(object)
+	typ := reflect.TypeOf(object)
 	kind := typ.Kind()
 	if !(kind == reflect.Array || kind == reflect.String || kind == reflect.Slice) {
 		return nil, errors.New("type is not supported")

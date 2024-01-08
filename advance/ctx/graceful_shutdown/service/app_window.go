@@ -1,5 +1,4 @@
-//go:build !windows
-// +build !windows
+//go:build app
 
 package service
 
@@ -9,7 +8,7 @@ import (
 )
 
 var signals = []os.Signal{
-	os.Interrupt, os.Kill, syscall.SIGKILL, syscall.SIGSTOP,
+	os.Interrupt, os.Kill, syscall.SIGKILL,
 	syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGILL, syscall.SIGTRAP,
-	syscall.SIGABRT, syscall.SIGSYS, syscall.SIGTERM,
+	syscall.SIGABRT, syscall.SIGTERM,
 }

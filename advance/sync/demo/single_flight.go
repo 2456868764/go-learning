@@ -45,12 +45,12 @@ func getArticle(id int) (article string, err error) {
 	atomic.AddInt32(&count, 1)
 	time.Sleep(time.Duration(count) * time.Millisecond)
 	fmt.Printf("结束获取 article: %d 请求\n", id)
-	panic("panic error")
 	return fmt.Sprintf("article: %d", id), nil
 }
 
 func singleflightGetArticle(sg *singleflight.Group, id int) (string, error) {
 	v, err, _ := sg.Do(fmt.Sprintf("%d", id), func() (interface{}, error) {
+		select {}
 		return getArticle(id)
 	})
 	return v.(string), err

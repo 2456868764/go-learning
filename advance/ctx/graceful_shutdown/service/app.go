@@ -38,5 +38,14 @@ func NewApp(opts ...Option) *App {
 	return app
 }
 
-type Server struct {
+func (app *App) StartAndServe() {
+
+}
+
+func (app *App) Shutdown() {
+
+}
+
+func (app *App) Close() {
+
 }
